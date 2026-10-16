@@ -2,3 +2,5 @@
 .quarto/
 *_files/
 *.html
+.venv/
+data/CWRU_data/
