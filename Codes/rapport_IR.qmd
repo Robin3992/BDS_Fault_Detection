@@ -17,44 +17,142 @@ Comparer le signal vibratoire d'un roulement **sain** à celui d'un roulement pr
 un **défaut de 0,007" sur la bague intérieure**, à charge nulle (0 HP, 1797 tr/min).
 Données : CWRU Bearing Data Center, accéléromètre côté entraînement, 12 kHz.
 
-
 ```{python}
+#Bloc 1 : remplace les deux anciens blocs de chargement
+#Ce que fait chaque partie
+#1.1 recopie les tableaux des quatre pages du site. Les numéros ont été vérifiés aujourd’hui sur les pages elles-mêmes, et None correspond aux astérisques (données non disponibles).
+#1.2 transforme ces tableaux en une table, le catalogue, avec une ligne par fichier et un nom qui résume tout. Par exemple, 12kDE_OR021at3_L2 se lit : 12 kHz, défaut côté entraînement, bague extérieure, 0,021", position 3 h, charge 2 HP.
+#1.3 définit charger(nom). Elle télécharge le fichier la première fois, puis le relit en local. Elle choisit la bonne variable quand un fichier en contient deux, et prend la vitesse nominale si la vitesse mesurée manque. Ce sont les deux défauts du code précédent.
+
+#Résultat attendu : 161 fichiers au catalogue, puis un tableau de synthèse :
+import io
+import urllib.request
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.io import loadmat
 from scipy.stats import kurtosis
 
-def charger_fichier_web(nom_fichier, canal="DE"):
-    """Charge un fichier .mat du site CWRU et retourne le signal au formaté.
+# ------------------------------------------------------------------
+# 1.1 Les numéros de fichiers du site, page par page
+#     clé = (défaut, diamètre en millièmes de pouce)
+#     valeur = numéros pour les charges 0, 1, 2, 3 HP (None = absent)
+# ------------------------------------------------------------------
+NORMAL = [97, 98, 99, 100]
 
-    nom_fichier : '97.mat'
-    canal       : 'DE', 'FE' ou 'BA'
-    """
-    # --- Chargement : URL ou fichier local ---
-    import urllib.request, io
-    response = urllib.request.urlopen("https://engineering.case.edu/sites/default/files/"+nom_fichier)
-    data = loadmat(io.BytesIO(response.read()))
+PAGES = {
+    "12kDE": (12000, {
+        ("IR", 7): [105, 106, 107, 108],      ("B", 7): [118, 119, 120, 121],
+        ("OR@6", 7): [130, 131, 132, 133],    ("OR@3", 7): [144, 145, 146, 147],
+        ("OR@12", 7): [156, 158, 159, 160],
+        ("IR", 14): [169, 170, 171, 172],     ("B", 14): [185, 186, 187, 188],
+        ("OR@6", 14): [197, 198, 199, 200],
+        ("IR", 21): [209, 210, 211, 212],     ("B", 21): [222, 223, 224, 225],
+        ("OR@6", 21): [234, 235, 236, 237],   ("OR@3", 21): [246, 247, 248, 249],
+        ("OR@12", 21): [258, 259, 260, 261],
+        ("IR", 28): [3001, 3002, 3003, 3004], ("B", 28): [3005, 3006, 3007, 3008],
+    }),
+    "48kDE": (48000, {
+        ("IR", 7): [109, 110, 111, 112],      ("B", 7): [122, 123, 124, 125],
+        ("OR@6", 7): [135, 136, 137, 138],    ("OR@3", 7): [148, 149, 150, 151],
+        ("OR@12", 7): [161, 162, 163, 164],
+        ("IR", 14): [174, 175, 176, 177],     ("B", 14): [189, 190, 191, 192],
+        ("OR@6", 14): [201, 202, 203, 204],
+        ("IR", 21): [213, 214, 215, 217],     ("B", 21): [226, 227, 228, 229],
+        ("OR@6", 21): [238, 239, 240, 241],   ("OR@3", 21): [250, 251, 252, 253],
+        ("OR@12", 21): [262, 263, 264, 265],
+    }),
+    "12kFE": (12000, {
+        ("IR", 7): [278, 279, 280, 281],      ("B", 7): [282, 283, 284, 285],
+        ("OR@6", 7): [294, 295, 296, 297],    ("OR@3", 7): [298, 299, 300, 301],
+        ("OR@12", 7): [302, 305, 306, 307],
+        ("IR", 14): [274, 275, 276, 277],     ("B", 14): [286, 287, 288, 289],
+        ("OR@6", 14): [313, None, None, None], ("OR@3", 14): [310, 309, 311, 312],
+        ("IR", 21): [270, 271, 272, 273],     ("B", 21): [290, 291, 292, 293],
+        ("OR@6", 21): [315, None, None, None], ("OR@3", 21): [None, 316, 317, 318],
+    }),
+}
 
-    # --- Recherche dynamique de la clé contenant le canal voulu ---
-    for cle, valeur in data.items():
-        if cle.endswith(f"_{canal}_time"):
-            return np.ravel(valeur)
+RPM_NOMINAL = {0: 1797, 1: 1772, 2: 1750, 3: 1730}
 
-    # --- Secours si rien trouvé ---
-    cles_disponibles = [c for c in data.keys() if not c.startswith("__")]
-    raise KeyError(f"Aucun canal '{canal}' dans {nom_fichier}. "
-                   f"Clés disponibles : {cles_disponibles}")
+# ------------------------------------------------------------------
+# 1.2 Le catalogue : une ligne par fichier, avec un nom lisible
+#     ex. 'Normal_L0', '12kDE_IR007_L0', '12kDE_OR021at3_L2', '48kDE_B014_L1'
+# ------------------------------------------------------------------
+lignes = []
+for charge, num in enumerate(NORMAL):
+    lignes.append({"nom": f"Normal_L{charge}", "numero": num, "source": "Normal",
+                   "fs": 12000, "defaut": "Sain", "position_OR": None,
+                   "diametre_mils": 0, "charge_hp": charge})
 
+for source, (fs, table) in PAGES.items():
+    for (defaut, diametre), numeros in table.items():
+        localisation, _, position = defaut.partition("@")
+        for charge, num in enumerate(numeros):
+            if num is None:
+                continue
+            nom = f"{source}_{localisation}{diametre:03d}" + (f"at{position}" if position else "") + f"_L{charge}"
+            lignes.append({"nom": nom, "numero": num, "source": source, "fs": fs,
+                           "defaut": localisation, "position_OR": position or None,
+                           "diametre_mils": diametre, "charge_hp": charge})
 
-x_sain = charger_fichier_web("97.mat", "DE")
-x_def = charger_fichier_web("105.mat", "DE")
+catalogue = pd.DataFrame(lignes).set_index("nom")
+catalogue["rpm_nominal"] = catalogue["charge_hp"].map(RPM_NOMINAL)
 
+# ------------------------------------------------------------------
+# 1.3 Lecture d'un fichier depuis le site (copie locale sous un nom lisible)
+# ------------------------------------------------------------------
+URL_CWRU = "https://engineering.case.edu/sites/default/files/"
+CACHE = Path("../data/cwru_cache")
+
+def charger(nom):
+    """Renvoie {'DE', 'FE', 'BA', 'fs', 'rpm'} pour un fichier du catalogue (ex. '12kDE_IR007_L0')."""
+    info = catalogue.loc[nom]
+    numero = int(info["numero"])
+    chemin = CACHE / f"{nom}__{numero}.mat"            # ex. 12kDE_IR007_L0__105.mat
+
+    if not chemin.exists():                            # 1re fois : téléchargement depuis le site
+        CACHE.mkdir(parents=True, exist_ok=True)
+        with urllib.request.urlopen(URL_CWRU + f"{numero}.mat") as reponse:
+            chemin.write_bytes(reponse.read())
+    mat = loadmat(chemin)
+
+    def choisir(suffixe):                              # privilégie la variable du bon numéro
+        cles = [k for k in mat if k.endswith(suffixe)]
+        bonne = [k for k in cles if k.startswith(f"X{numero:03d}")]
+        return (bonne or cles or [None])[0]
+
+    signaux = {"fs": int(info["fs"])}
+    for canal in ["DE", "FE", "BA"]:
+        cle = choisir(f"_{canal}_time")
+        signaux[canal] = None if cle is None else np.ravel(mat[cle])
+    cle_rpm = choisir("RPM")
+    signaux["rpm"] = float(np.squeeze(mat[cle_rpm])) if cle_rpm else float(info["rpm_nominal"])
+    return signaux
+
+print(f"{len(catalogue)} fichiers au catalogue")
+catalogue.groupby(["source", "defaut"]).size().unstack(fill_value=0)
+```
+
+```{python}
+#Bloc 2 charger deux fichiers
+
+sain = charger("Normal_L0")
+defaut = charger("12kDE_IR007_L0")
+
+for nom, s in [("Normal_L0", sain), ("12kDE_IR007_L0", defaut)]:
+    x = s["DE"]
+    print(f"{nom:16s} {len(x):7d} points   fs={s['fs']} Hz   "
+          f"durée={len(x)/s['fs']:.1f} s   rpm={s['rpm']:.0f}   "
+          f"FE présent : {s['FE'] is not None}   BA présent : {s['BA'] is not None}")
 ```
 
 ## Signaux temporels
 
 ```{python}
+
 #| fig-cap: "0,1 seconde de signal pour chaque condition (même échelle)."
 fig, axes = plt.subplots(2, 1, figsize=(10, 4), sharey=True)
 axes[0].plot(x_sain[:1200], lw=0.7); axes[0].set_title("Sain", loc="left")
@@ -92,124 +190,6 @@ Le kurtosis du signal sain, proche de 3, est celui d'un signal gaussien sans cho
 Pour aller plus loin dans l'analyse, notre première approche est de décomposer les signaux par transformation de Fourier.
 On obtient les spectres de fréquence des signaux, avec en abscisse la fréquence, et en ordonnées l'amplitude des fréquences :
 
-```{python}
-# ============================================================
-# 0. Importing libraries and modules
-# ============================================================
-import pandas as pd
-import numpy as np
-import scipy.io
-import matplotlib.pyplot as plt
-import urllib.request
-import io
-import os
-from scipy.stats import kurtosis
-from scipy.signal import welch              # Analyse spectral Welch
-from scipy.fftpack import fft, fftfreq      # Analyse spectral FFT
-import scipy.signal as sci
-from scipy.signal import hilbert
-
-# ============================================================
-# 1. Chargement des données 
-# ============================================================
-
-    # ==================
-    # 1.1 Contexte
-    # ==================
-
-# --- Fréquences caractéristiques des roulements --- #
-# Source : https://engineering.case.edu/bearingdatacenter/bearing-information
-COEFF_Freq_DE = {"BPFI": 5.4152, "BPFO": 3.5848, "FTF": 0.39828, "BSF": 4.7135} 
-COEFF_Freq_FE = {"BPFI": 4.9469, "BPFO": 3.0530, "FTF": 0.3817, "BSF": 3.9874}
-# BPFI (Ball Pass Frequency Inner)      >> Piste intérieur
-# BPFO (Ball Pass Frequency Outer)      >> Piste extérieur
-# BSF (Ball Spin Frequency)             >> Bille
-# FTF (Fundamental Train Frequency)     >> Cage
-
-FS = 12000  # fréquence d'échantillonnage (Hz)
-
-    # ==================
-    # 1.2 Data
-    # ==================
-# Local data path
-LocalDataPath = "../data/CWRU_data/"
-
-# Data loading
-def charger_signaux(chemin_mat):
-    # Si c'est un dossier, prend le premier fichier .mat
-    if os.path.isdir(LocalDataPath + chemin_mat):
-        fichier = next(f for f in os.listdir(LocalDataPath + chemin_mat) if f.endswith('.mat'))
-        chemin_mat = chemin_mat.rstrip('/') + '/' + fichier
-
-    mat = scipy.io.loadmat(LocalDataPath+chemin_mat)
-    signaux = {}
-    for cle, valeur in mat.items():
-        if cle.startswith("__"):
-            continue
-        if cle.endswith("_DE_time"):
-            signaux["DE"] = np.ravel(valeur)
-        elif cle.endswith("_FE_time"):
-            signaux["FE"] = np.ravel(valeur)
-        elif cle.endswith("_BA_time"):
-            signaux["BA"] = np.ravel(valeur)
-        elif cle.endswith("RPM"):
-            signaux["RPM"] = float(valeur[0][0])
-    return signaux
-
-# ============================================================
-# 2. Chargement des données
-# ============================================================
-normal = charger_signaux('Normal_Baseline_Data/Motor_Load_1/Normal_1')
-fault = charger_signaux('12k_Fan_End_Bearing_Fault/Fault_Diam_007/Motor_Load_1/IR007_1')
-# fault = charger_signaux('12k_Fan_End_Bearing_Fault/Fault_Diam_007/Motor_Load_1/B007_1')
-# fault = charger_signaux('12k_Fan_End_Bearing_Fault/Fault_Diam_007/Motor_Load_1/OR007@6_1')
-
-# --- Dictionnaire de signaux
-signaux = {
-    "Normal Drive": normal.get("DE"),
-    "Normal Fan":   normal.get("FE"),
-    "Fault Drive":  fault.get("DE"),
-    "Fault Fan":    fault.get("FE"),
-    "Fault Base":   fault.get("BA"),
-    "RPM":          fault.get("RPM"),
-}
-# supprime les vides
-signaux = {nom: sig for nom, sig in signaux.items() if sig is not None}
-rpm=signaux["RPM"]
-
-
-
-# ============================================================
-# 5. Analyse spectrale (FFT)
-# ============================================================
-def spectre_fft(signal, fs):
-    n = len(signal)
-    spectre = np.abs(fft(signal))[: n // 2] * 2 / n
-    freqs = fftfreq(n, d=1 / fs)[: n // 2]
-    return freqs, spectre
-
-fig, axes = plt.subplots(2, 2, figsize=(14, 8), sharey=True)
-for i, (titre, sig) in enumerate([("Sortie moteur : signal sain", signaux["Normal Drive"]),
-                                   ("Sortie ventilateur : signal sain",   signaux["Normal Fan"])]):
-    freqs, spectre = spectre_fft(sig, FS)
-    axes[i, 0].plot(freqs, spectre, color="g", lw=0.5)
-    axes[i, 0].set_title(titre)
-    axes[i, 0].set_xlim(0, FS / 2)
-
-for i, (titre, sig) in enumerate([("Sortie moteur : signal défaut", signaux["Fault Drive"]),
-                                  ("Sortie ventilateur : signal défaut",   signaux["Fault Fan"])]):
-    freqs, spectre = spectre_fft(sig, FS)
-    axes[i, 1].plot(freqs, spectre, color="r", lw=0.5)
-    axes[i, 1].set_title(titre)
-    axes[i, 1].set_xlim(0, FS / 2)
-
-for ax in axes[:, 0]: ax.set_ylabel("Amplitude")
-for ax in axes[1, :]:   ax.set_xlabel("Fréquence (Hz)")
-
-plt.tight_layout()
-fig.suptitle("Analyse spectrale BRUTE (FFT)", fontsize=20, y=1.03)
-plt.show()
-```
 
 
 ## Raies de fréquences caractéristiques

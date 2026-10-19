@@ -4,3 +4,4 @@
 *.html
 .venv/
 data/CWRU_data/
+data/cwru_cache/
