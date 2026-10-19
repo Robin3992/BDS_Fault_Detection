@@ -17,6 +17,7 @@ Comparer le signal vibratoire d'un roulement **sain** à celui d'un roulement pr
 un **défaut de 0,007" sur la bague intérieure**, à charge nulle (0 HP, 1797 tr/min).
 Données : CWRU Bearing Data Center, accéléromètre côté entraînement, 12 kHz.
 
+
 ```{python}
 import numpy as np
 import pandas as pd
@@ -24,8 +25,31 @@ import matplotlib.pyplot as plt
 from scipy.io import loadmat
 from scipy.stats import kurtosis
 
-x_sain = np.ravel(loadmat("../data/normal/97.mat")["X097_DE_time"])
-x_def  = np.ravel(loadmat("../data/12k-DE/105.mat")["X105_DE_time"])
+def charger_fichier_web(nom_fichier, canal="DE"):
+    """Charge un fichier .mat du site CWRU et retourne le signal au formaté.
+
+    nom_fichier : '97.mat'
+    canal       : 'DE', 'FE' ou 'BA'
+    """
+    # --- Chargement : URL ou fichier local ---
+    import urllib.request, io
+    response = urllib.request.urlopen("https://engineering.case.edu/sites/default/files/"+nom_fichier)
+    data = loadmat(io.BytesIO(response.read()))
+
+    # --- Recherche dynamique de la clé contenant le canal voulu ---
+    for cle, valeur in data.items():
+        if cle.endswith(f"_{canal}_time"):
+            return np.ravel(valeur)
+
+    # --- Secours si rien trouvé ---
+    cles_disponibles = [c for c in data.keys() if not c.startswith("__")]
+    raise KeyError(f"Aucun canal '{canal}' dans {nom_fichier}. "
+                   f"Clés disponibles : {cles_disponibles}")
+
+
+x_sain = charger_fichier_web("97.mat", "DE")
+x_def = charger_fichier_web("105.mat", "DE")
+
 ```
 
 ## Signaux temporels
@@ -58,3 +82,460 @@ pd.DataFrame({"Sain": indicateurs(x_sain),
 
 Les quatre indicateurs distinguent nettement les deux conditions.
 Le kurtosis du signal sain, proche de 3, est celui d'un signal gaussien sans chocs.
+
+
+
+
+
+## Analyse de spectre - Série de fourrier (FFT)
+
+Pour aller plus loin dans l'analyse, notre première approche est de décomposer les signaux par transformation de Fourier.
+On obtient les spectres de fréquence des signaux, avec en abscisse la fréquence, et en ordonnées l'amplitude des fréquences :
+
+```{python}
+# ============================================================
+# 0. Importing libraries and modules
+# ============================================================
+import pandas as pd
+import numpy as np
+import scipy.io
+import matplotlib.pyplot as plt
+import urllib.request
+import io
+import os
+from scipy.stats import kurtosis
+from scipy.signal import welch              # Analyse spectral Welch
+from scipy.fftpack import fft, fftfreq      # Analyse spectral FFT
+import scipy.signal as sci
+from scipy.signal import hilbert
+
+# ============================================================
+# 1. Chargement des données 
+# ============================================================
+
+    # ==================
+    # 1.1 Contexte
+    # ==================
+
+# --- Fréquences caractéristiques des roulements --- #
+# Source : https://engineering.case.edu/bearingdatacenter/bearing-information
+COEFF_Freq_DE = {"BPFI": 5.4152, "BPFO": 3.5848, "FTF": 0.39828, "BSF": 4.7135} 
+COEFF_Freq_FE = {"BPFI": 4.9469, "BPFO": 3.0530, "FTF": 0.3817, "BSF": 3.9874}
+# BPFI (Ball Pass Frequency Inner)      >> Piste intérieur
+# BPFO (Ball Pass Frequency Outer)      >> Piste extérieur
+# BSF (Ball Spin Frequency)             >> Bille
+# FTF (Fundamental Train Frequency)     >> Cage
+
+FS = 12000  # fréquence d'échantillonnage (Hz)
+
+    # ==================
+    # 1.2 Data
+    # ==================
+# Local data path
+LocalDataPath = "../data/CWRU_data/"
+
+# Data loading
+def charger_signaux(chemin_mat):
+    # Si c'est un dossier, prend le premier fichier .mat
+    if os.path.isdir(LocalDataPath + chemin_mat):
+        fichier = next(f for f in os.listdir(LocalDataPath + chemin_mat) if f.endswith('.mat'))
+        chemin_mat = chemin_mat.rstrip('/') + '/' + fichier
+
+    mat = scipy.io.loadmat(LocalDataPath+chemin_mat)
+    signaux = {}
+    for cle, valeur in mat.items():
+        if cle.startswith("__"):
+            continue
+        if cle.endswith("_DE_time"):
+            signaux["DE"] = np.ravel(valeur)
+        elif cle.endswith("_FE_time"):
+            signaux["FE"] = np.ravel(valeur)
+        elif cle.endswith("_BA_time"):
+            signaux["BA"] = np.ravel(valeur)
+        elif cle.endswith("RPM"):
+            signaux["RPM"] = float(valeur[0][0])
+    return signaux
+
+# ============================================================
+# 2. Chargement des données
+# ============================================================
+normal = charger_signaux('Normal_Baseline_Data/Motor_Load_1/Normal_1')
+fault = charger_signaux('12k_Fan_End_Bearing_Fault/Fault_Diam_007/Motor_Load_1/IR007_1')
+# fault = charger_signaux('12k_Fan_End_Bearing_Fault/Fault_Diam_007/Motor_Load_1/B007_1')
+# fault = charger_signaux('12k_Fan_End_Bearing_Fault/Fault_Diam_007/Motor_Load_1/OR007@6_1')
+
+# --- Dictionnaire de signaux
+signaux = {
+    "Normal Drive": normal.get("DE"),
+    "Normal Fan":   normal.get("FE"),
+    "Fault Drive":  fault.get("DE"),
+    "Fault Fan":    fault.get("FE"),
+    "Fault Base":   fault.get("BA"),
+    "RPM":          fault.get("RPM"),
+}
+# supprime les vides
+signaux = {nom: sig for nom, sig in signaux.items() if sig is not None}
+rpm=signaux["RPM"]
+
+
+
+# ============================================================
+# 5. Analyse spectrale (FFT)
+# ============================================================
+def spectre_fft(signal, fs):
+    n = len(signal)
+    spectre = np.abs(fft(signal))[: n // 2] * 2 / n
+    freqs = fftfreq(n, d=1 / fs)[: n // 2]
+    return freqs, spectre
+
+fig, axes = plt.subplots(2, 2, figsize=(14, 8), sharey=True)
+for i, (titre, sig) in enumerate([("Sortie moteur : signal sain", signaux["Normal Drive"]),
+                                   ("Sortie ventilateur : signal sain",   signaux["Normal Fan"])]):
+    freqs, spectre = spectre_fft(sig, FS)
+    axes[i, 0].plot(freqs, spectre, color="g", lw=0.5)
+    axes[i, 0].set_title(titre)
+    axes[i, 0].set_xlim(0, FS / 2)
+
+for i, (titre, sig) in enumerate([("Sortie moteur : signal défaut", signaux["Fault Drive"]),
+                                  ("Sortie ventilateur : signal défaut",   signaux["Fault Fan"])]):
+    freqs, spectre = spectre_fft(sig, FS)
+    axes[i, 1].plot(freqs, spectre, color="r", lw=0.5)
+    axes[i, 1].set_title(titre)
+    axes[i, 1].set_xlim(0, FS / 2)
+
+for ax in axes[:, 0]: ax.set_ylabel("Amplitude")
+for ax in axes[1, :]:   ax.set_xlabel("Fréquence (Hz)")
+
+plt.tight_layout()
+fig.suptitle("Analyse spectrale BRUTE (FFT)", fontsize=20, y=1.03)
+plt.show()
+```
+
+
+## Raies de fréquences caractéristiques
+
+Identifier la caractéristique du défaut :
+    Sur base de la géométrie de chaque roulement, on calcule les raies de fréquences caractéristiques de chaque défaut.
+    On affiche ces raies caractéristiques sur l'analyse spectrale, et on zoom sur la zone concernée (basse fréquence).
+    On affiche également les premiers harmoniques de chaque raies caractéristiques, qui pourront aider a identifier un signal.
+
+```{python}
+# ============================================================
+# 5. Analyse spectrale (FFT) + raies caractéristiques
+# ============================================================
+def freqs_caracteristiques(rpm, roulement="DE"):
+    coeffs = COEFF_Freq_FE if roulement == "FE" else COEFF_Freq_DE
+    Fr = rpm / 60
+    return {nom: coef * Fr for nom, coef in coeffs.items()}
+
+# On modifie le rpm avec celui indiqué sur le site, sinon les raies ne correspondent pas
+rpm = 1772
+
+# --- Styles distincts par défaut : (couleur, style de trait) ---
+styles_raies = {
+    "BPFI": ("purple", "-"),    # trait plein
+    "BPFO": ("blue",   "--"),   # tirets
+    "BSF":  ("orange", "-."),   # trait-point
+    "FTF":  ("green",  ":"),    # pointillés
+}
+
+
+graph_XMAX = 0
+y_max = 0
+
+for i, (titre, sig) in enumerate([("Fault Drive", signaux["Fault Drive"]),
+                                  ("Fault Fan",   signaux["Fault Fan"])]):                             
+    roulement = "DE" if "Drive" in titre else "FE"
+    FC = freqs_caracteristiques(rpm, roulement)
+    if FC["BPFI"] * 3.5 > graph_XMAX: graph_XMAX=FC["BPFI"] * 3.5
+
+    masque = (freqs >= 0) & (freqs <= graph_XMAX)
+    if spectre[masque].max() > y_max: 
+        y_max = spectre[masque].max()
+        y_texte = y_max * 0.9
+
+
+
+
+
+fig, axes = plt.subplots(2, 1, figsize=(14, 8), sharey=True)
+
+for i, (titre, sig) in enumerate([("Fault Drive", signaux["Fault Drive"]),
+                                  ("Fault Fan",   signaux["Fault Fan"])]):
+                                  
+    roulement = "DE" if "Drive" in titre else "FE"
+    FC = freqs_caracteristiques(rpm, roulement)
+
+    libelles_raies = {
+        "BPFI": "Piste int - "+str(round(FC["BPFI"]))+"Hz",
+        "BPFO": "Piste ext - "+str(round(FC["BPFO"]))+"Hz",
+        "BSF":  "Bille - "+str(round(FC["BSF"]))+"Hz",
+        "FTF":  "Cage - "+str(round(FC["FTF"]))+"Hz",
+    }
+
+
+    freqs, spectre = spectre_fft(sig, FS)
+    axes[i].plot(freqs, spectre, color="r", lw=0.5)
+    axes[i].set_title(titre)
+    axes[i].set_xlim(0, graph_XMAX)
+    axes[i].set_ylim(0, y_max * 1.05)
+
+
+    # --- Raies caractéristiques + harmoniques ---
+    for nom, val in FC.items():
+        couleur, ls = styles_raies[nom]
+        libelle = libelles_raies[nom]
+
+        # Fondamentale : raie principale bien visible
+        axes[i].axvline(val, color=couleur, ls=ls, lw=1.8, alpha=0.4,
+                        label=f"{nom} = {val:.1f} Hz")
+
+        # Harmoniques (2x, 3x) : plus fines et plus transparentes
+        for k in range(2, 4):
+            f_raie = k * val
+            if f_raie < graph_XMAX:
+                axes[i].axvline(f_raie, color=couleur, ls=ls,
+                                lw=0.8, alpha=0.2)
+
+        axes[i].text(val, y_texte, libelle,
+                     rotation=90, fontsize=9, color=couleur,
+                     ha="right", va="top")
+
+    axes[i].legend(loc="upper right", fontsize=8, framealpha=0.7)
+
+for ax in axes:
+    ax.set_ylabel("Amplitude")
+axes[-1].set_xlabel("Fréquence (Hz)")
+
+plt.tight_layout()
+fig.suptitle("Analyse spectrale (FFT) — Raies de fréquences caractéristiques", fontsize=20, y=1.03)
+plt.show()
+```
+
+
+        On voit une correspondance sur la raie associée à la piste intérieure, mais sur les 2 signaux Drive et Fan.
+        L'amplitude est plus forte sur le pic du signal Drive, alors que notre défaut est sur le roulement Fan.
+        Le pic le plus important se trouve sur le roulement FAN, mais il n'est associé à aucune raie !
+
+Conclusion : Difficile de conclure quoi que ce soit
+Step suivant : Améliorer l'identification
+
+## Analyse d'enveloppe
+
+Plutôt que d'analyser le spectre du signal brute, on va analyser le spectre de l'enveloppe du signal, cela nous permet d'identifier les redondances des pics.
+Pour ça, on procède en 3 étapes :
+  1. On fait un filtre passe bande sur le signal initial pour filter seulement la bande de résonnance, ce qui évite les bruits parasites.
+  2. On extrait l'enveloppe par une transformation de Hilbert, ce qui nous donne un signal correspondant aux pics d'amplitude.
+  3. On fait une tranformation de Fourier pour avoir les fréquences de ces pics, et donc des chocs sur le défaut.
+  4. On ajoute les bandes caractéristiques pour identifier le type de défaut.
+
+```{python}
+# ============================================================
+# 6-bis. Illustration pédagogique : les 3 étapes de l'analyse d'enveloppe
+# ============================================================
+from scipy.signal import hilbert
+
+# ------------------------------------------------------------
+# Étape 0 : signal de démonstration (optionnel)
+# -> décommente la ligne "SIG =" correspondante :
+#    - soit un signal SYNTHÉTIQUE parfaitement contrôlé (chocs périodiques)
+#    - soit ton vrai signal CWRU
+# ------------------------------------------------------------
+def signal_demo(fs=12000, duree=1.0, f_choc=103.36, f_res=2500):
+    """Chocs périodiques à f_choc (≈BPFO) excitant une résonance à f_res."""
+    t = np.arange(0, duree, 1/fs)
+    signal = np.zeros_like(t)
+    periode = 1/f_choc
+    for t0 in np.arange(0, duree, periode):
+        # Sinusoïde amortie = empreinte d'un choc sur la structure
+        choc = np.sin(2*np.pi*f_res*(t - t0)) * np.exp(-80*(t - t0))
+        signal += np.where(t >= t0, choc, 0)
+    signal += 0.5*np.random.randn(len(t))          # bruit réaliste
+    return t, signal
+
+# t, SIG = signal_demo()                           # <- version synthétique
+SIG = signaux["Fault Fan"]                          # <- version réelle
+t = np.arange(len(SIG)) / FS
+
+BANDE = (1000, 4000)                                # bande de résonance (Hz)
+N_FFT = 2**14
+
+fig, axes = plt.subplots(4, 1, figsize=(14, 12))
+
+# ------------------------------------------------------------
+# VUE 1 : signal BRUT
+# "Le défaut est invisible : les chocs sont noyés dans le bruit
+#  et chaque choc excite une résonance haute fréquence."
+# ------------------------------------------------------------
+axes[0].plot(t[:int(0.05*FS)], SIG[:int(0.05*FS)], color="gray", lw=0.5)
+axes[0].set_title("0. Signal brut — chocs noyés dans les résonances", fontsize=13)
+axes[0].set_ylabel("Amplitude")
+
+# ------------------------------------------------------------
+# ÉTAPE 1 : filtre passe-bande autour de la bande de résonance
+# "On ne garde QUE la bande où les chocs 'sonnent' (ici 1-4 kHz).
+#  On supprime les basses fréquences (rotation, 50 Hz) et le bruit HF."
+# ------------------------------------------------------------
+sos = sci.butter(4, [BANDE[0]/(FS/2), BANDE[1]/(FS/2)],
+                 btype='bandpass', output='sos')
+SIG_FILTRE = sci.sosfiltfilt(sos, SIG)              # zero-phase : chocs non décalés
+
+axes[1].plot(t[:int(0.05*FS)], SIG_FILTRE[:int(0.05*FS)], color="tab:blue", lw=0.5)
+axes[1].set_title(f"1. Après filtre passe-bande {BANDE[0]}–{BANDE[1]} Hz "
+                  f"— il ne reste que la résonance excitée par les chocs", fontsize=13)
+axes[1].set_ylabel("Amplitude")
+
+# ------------------------------------------------------------
+# ÉTAPE 2 : démodulation (Hilbert) -> enveloppe des chocs
+# "Hilbert donne l'amplitude instantanée : on extrait le
+#  'clic-clic-clic' (le rythme des chocs), comme un récepteur radio AM."
+# ------------------------------------------------------------
+ENVELOPPE = np.abs(hilbert(SIG_FILTRE))
+ENVELOPPE = ENVELOPPE - np.mean(ENVELOPPE)          # retire le pic à 0 Hz
+
+axes[2].plot(t[:int(0.05*FS)], ENVELOPPE[:int(0.05*FS)], color="tab:green", lw=1)
+axes[2].set_title("2. Enveloppe (Hilbert) — on voit maintenant le rythme des chocs", fontsize=13)
+axes[2].set_ylabel("Amplitude")
+
+# ------------------------------------------------------------
+# ÉTAPE 3 : FFT de l'enveloppe -> raies BPFI / BPFO nettes
+# "Un train d'impulsions de période T = raies à 1/T, 2/T, 3/T...
+#  La fondamentale tombe pile sur la fréquence caractéristique du défaut."
+# ------------------------------------------------------------
+fenetre = np.hanning(len(ENVELOPPE))
+freqs_env = np.fft.rfftfreq(N_FFT, d=1/FS)
+spectre_env = np.abs(np.fft.rfft(ENVELOPPE*fenetre, n=N_FFT)) / np.sum(fenetre) * 2
+
+axes[3].plot(freqs_env, spectre_env, color="tab:red", lw=0.8)
+axes[3].set_title("3. FFT de l'enveloppe — les raies caractéristiques ressortent nettement", fontsize=13)
+axes[3].set_ylabel("Amplitude d'enveloppe")
+axes[3].set_xlabel("Fréquence (Hz)")
+
+# Raies caractéristiques (comme dans tes sections 5 et 6)
+roulement = "FE"
+FC = freqs_caracteristiques(rpm, roulement)
+for nom, val in FC.items():
+    couleur, ls = styles_raies[nom]
+    axes[3].axvline(val, color=couleur, ls=ls, lw=1.5, alpha=0.5, label=f"{nom} = {val:.1f} Hz")
+    for k in range(2, 4):                          # harmoniques 2x, 3x
+        if k*val < graph_XMAX:
+            axes[3].axvline(k*val, color=couleur, ls=ls, lw=0.7, alpha=0.2)
+axes[3].set_xlim(0, graph_XMAX)
+axes[3].legend(loc="upper right", fontsize=8, framealpha=0.7)
+
+plt.tight_layout()
+fig.suptitle("Analyse d'enveloppe : les 3 étapes", fontsize=20, y=1.01)
+plt.show()
+```
+
+```{python}
+# ============================================================
+# 6. Analyse d'enveloppe (filtre passe-bande + Hilbert + FFT)
+# ============================================================
+def spectre_enveloppe(signal, fs, bande=(1000, 4000), n_fft=2**14):
+    """Analyse d'enveloppe :
+    1. Filtre passe-bande autour d'une bande de résonance
+    2. Démodulation par transformation de Hilbert -> enveloppe des chocs
+    3. FFT de l'enveloppe -> les raies BPFI/BPFO ressortent nettement
+    """
+    # --- 1. Filtre passe-bande (zero-phase, pas de décalage temporel) ---
+    sos = sci.butter(4, [bande[0]/(fs/2), bande[1]/(fs/2)],
+                     btype='bandpass', output='sos')
+    signal_filtre = sci.sosfiltfilt(sos, signal)
+
+    # --- 2. Démodulation : enveloppe via Hilbert ---
+    enveloppe = np.abs(hilbert(signal_filtre))
+    enveloppe = enveloppe - np.mean(enveloppe)   # retire la composante continue
+
+    fenetre = np.hanning(len(enveloppe))         # limite le spectral leakage
+
+    # --- 3. FFT de l'enveloppe ---
+    spectre = np.abs(np.fft.rfft(enveloppe * fenetre, n=n_fft))
+    freqs = np.fft.rfftfreq(n_fft, d=1/fs)
+    spectre = spectre / np.sum(fenetre) * 2       # normalisation en amplitude
+
+    return freqs, spectre
+
+
+# --- Paramètres de la bande de résonance (à ajuster selon la machine) ---
+BANDE_RESONANCE = (1000, 4000)   # Hz
+rpm=1772
+
+graph_XMAX = 0
+y_max = 0
+
+for i, (titre, sig) in enumerate([("Fault Drive", signaux["Fault Drive"]),
+                                  ("Fault Fan",   signaux["Fault Fan"])]):
+    # Roulement concerné : Drive -> DE, Fan -> FE
+    roulement = "DE" if "Drive" in titre else "FE"
+    FC = freqs_caracteristiques(rpm, roulement)
+
+    if FC["BPFI"] * 3.5 > graph_XMAX: graph_XMAX=FC["BPFI"] * 3.5
+    freqs_env, spectre_env = spectre_enveloppe(sig, FS, bande=BANDE_RESONANCE)
+
+    masque_env = (freqs_env >= 0) & (freqs_env <= graph_XMAX)
+    if spectre_env[masque_env].max() > y_max: 
+        y_max = spectre_env[masque_env].max()
+        y_texte = y_max * 0.9
+    
+
+fig, axes = plt.subplots(2, 1, figsize=(14, 8), sharey=True)
+
+for i, (titre, sig) in enumerate([("Fault Drive", signaux["Fault Drive"]),
+                                  ("Fault Fan",   signaux["Fault Fan"])]):
+    # Roulement concerné : Drive -> DE, Fan -> FE
+    roulement = "DE" if "Drive" in titre else "FE"
+    FC = freqs_caracteristiques(rpm, roulement)
+
+    freqs_env, spectre_env = spectre_enveloppe(sig, FS, bande=BANDE_RESONANCE)
+
+    axes[i].plot(freqs_env, spectre_env, color="r", lw=0.5)
+    axes[i].set_title(titre + f"  (filtre {BANDE_RESONANCE[0]}–{BANDE_RESONANCE[1]} Hz)")
+    axes[i].set_xlim(0, graph_XMAX)
+    axes[i].set_ylim(0, y_max * 1.05)
+
+    libelles_raies = {
+        "BPFI": "Piste int - "+str(round(FC["BPFI"]))+"Hz",
+        "BPFO": "Piste ext - "+str(round(FC["BPFO"]))+"Hz",
+        "BSF":  "Bille - "+str(round(FC["BSF"]))+"Hz",
+        "FTF":  "Cage - "+str(round(FC["FTF"]))+"Hz",
+    }
+    axes[i].set_xlim(0, graph_XMAX)
+    axes[i].set_ylim(0, y_max * 1.05)
+
+
+    # --- Raies caractéristiques + harmoniques (mêmes styles qu'avant) ---
+    for nom, val in FC.items():
+        couleur, ls = styles_raies[nom]
+        axes[i].axvline(val, color=couleur, ls=ls, lw=1.8, alpha=0.4,
+                        label=f"{nom} = {val:.1f} Hz")
+        for k in range(2, 4):                    # harmoniques 2x, 3x
+            f_raie = k * val
+            if f_raie < graph_XMAX:
+                axes[i].axvline(f_raie, color=couleur, ls=ls,
+                                lw=0.8, alpha=0.2)
+            if i == 1:
+                axes[i].text(val * k, y_texte,
+                     f"{nom} harm {k} = {val*k:.1f} Hz",
+                     rotation=90, fontsize=9, color=couleur, alpha=0.5,
+                     ha="right", va="top")
+
+        axes[i].text(val, y_texte,
+                     f"{nom} = {val:.1f} Hz",
+                     rotation=90, fontsize=9, color=couleur,
+                     ha="right", va="top")
+
+    axes[i].legend(loc="upper right", fontsize=8, framealpha=0.7)
+
+for ax in axes:
+    ax.set_ylabel("Amplitude d'enveloppe")
+axes[-1].set_xlabel("Fréquence (Hz)")
+
+
+
+
+plt.tight_layout()
+fig.suptitle("Analyse d'enveloppe (Hilbert) — Raies de fréquences caractéristiques",
+             fontsize=20, y=1.03)
+plt.show()
+```
