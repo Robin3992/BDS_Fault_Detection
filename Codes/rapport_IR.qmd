@@ -61,8 +61,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import scipy.signal as sci
 from scipy.io import loadmat
+from scipy.signal import hilbert
 from scipy.stats import kurtosis
+from scipy.fftpack import fft, fftfreq
 
 # ------------------------------------------------------------------
 # 1.1 Les numéros de fichiers du site, page par page
@@ -137,7 +140,8 @@ URL_CWRU = "https://engineering.case.edu/sites/default/files/"
 CACHE = Path("../data/cwru_cache")
 
 def charger(nom):
-    """Renvoie {'DE', 'FE', 'BA', 'fs', 'rpm'} pour un fichier du catalogue (ex. '12kDE_IR007_L0')."""
+    """Renvoie {'DE', 'FE', 'BA', 'fs', 'rpm'} pour un fichier du catalogue
+    (ex. '12kDE_IR007_L0')."""
     info = catalogue.loc[nom]
     numero = int(info["numero"])
     chemin = CACHE / f"{nom}__{numero}.mat"            # ex. 12kDE_IR007_L0__105.mat
@@ -241,6 +245,14 @@ devient une observation, sur laquelle on calcule quatre indicateurs :
 | Pic | $\max \lvert x_i \rvert$ | Amplitude maximale atteinte |
 | Facteur de crête | Pic / RMS | Importance des chocs par rapport au niveau moyen |
 | Kurtosis | $\frac{1}{n}\sum (x_i-\bar{x})^4 / \sigma^4$ | Présence de valeurs extrêmes (3 pour une loi normale) |
+
+Les indicateurs temporels classiques en surveillance vibratoire sont :
+
+- **Moyenne** : moyenne signal, doit être = 0 si le calibrage est bon.
+- **RMS** : niveau global d'énergie vibratoire ;
+- **Pic** : amplitude maximale atteinte ;
+- **Crête** (= Pic / RMS) : caractère impulsif du signal ;
+- **Kurtosis** : queues de distribution — proche de **3** pour un bruit normal, il dépasse 3 en présence de chocs.
 
 ```{python}
 #| label: table-indicateurs
