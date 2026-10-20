@@ -115,7 +115,8 @@ D'après la page *Apparatus & Procedures* du site, les signaux sont échantillon
 
 Plutôt que de charger les fichiers un par un par leur numéro, on construit un **catalogue** de tout le jeu CWRU : chaque fichier y est désigné par un nom lisible (ex. `12kDE_IR007_L0` = défaut bague intérieure 0,007", côté moteur, 12 kHz, charge 0 HP), associé à son numéro de téléchargement, sa fréquence d'échantillonnage annoncée et sa vitesse nominale. Le chargement télécharge le fichier depuis le site au premier appel, puis le met en cache local.
 
-On charge le fichier d'échantillon sain et défaut pour le cas que nous étudions ici, et on affiche les caractéristiques des 2 fichiers .mat :
+On charge le fichier d'échantillon sain et défaut pour le cas que nous étudions ici,
+et on affiche les caractéristiques des 2 fichiers .mat :
 
 ```{python}
 import urllib.request
@@ -298,7 +299,11 @@ resume = pd.DataFrame([
 resume
 ```
 
-Aucune valeur manquante ni aberrante. Les deux fichiers devraient avoir la même fréquence d'échantillonnage selon les indications du site CWRU (12 kHz), cependant on constate un rapport de 2 entre le sain et le défaut, sur la durée et également le nombre de point. On soupçonne ici une fréquence d'échantillonage à **24KHz** sur le sain, ce qui serait plus cohérent. Gardons **12KHz** comme indiqué pour le moment, mais ce point devra néanmoins être confirmé sur le signal lui-même dans la suite du projet. La fréquence d'échantillonnage n'est stockée nulle part dans les fichiers `.mat`, et le catalogue repose sur l'organisation annoncée du site. Si une incohérence apparaît lors des analyses spectrales, une vérification (durée, raies physiques) sera mise en place et une correction appliquée si besoin.
+Aucune valeur manquante ni aberrante. 
+Les deux fichiers devraient avoir la même fréquence d'échantillonnage selon les indications du site CWRU (12 kHz), cependant on constate un rapport de 2 entre le sain et le défaut, sur la durée et également le nombre de point.
+On soupçonne ici une fréquence d'échantillonage à **24KHz** sur le sain, ce qui serait plus cohérent.
+Gardons **12KHz** comme indiqué pour le moment, mais ce point devra néanmoins être confirmé sur le signal lui-même dans la suite du projet.
+La fréquence d'échantillonnage n'est stockée nulle part dans les fichiers `.mat`, et le catalogue repose sur l'organisation annoncée du site. Si une incohérence apparaît lors des analyses spectrales, une vérification (durée, raies physiques) sera mise en place et une correction appliquée si besoin.
 
 ## Styles de tracé
 
