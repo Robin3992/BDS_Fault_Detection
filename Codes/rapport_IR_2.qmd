@@ -47,7 +47,7 @@ Table des matières
 
 [1.3.3      Données : 4](#_Toc243387690)
 
-# 1. Présentation du projet 
+# 1. Présentation du projet
 
 ## 1.1          Le projet :
 
@@ -57,11 +57,11 @@ Le but du projet est de construire une chaîne complète d'analyse capable de d�
 
 Selon les résultats obtenus, le modèle pourra éventuellement classer la sévérité du défaut et estimer la durée de vie résiduelle (RUL – Remaining Useful Life) des roulements.
 
-## 1.2          Contexte et Enjeux : 
+## 1.2          Contexte et Enjeux :
 
 En milieu industriel, la maintenance des équipements est un enjeu fort à cause des couts d’intervention et  des temps d’indisponibilité des machines (pertes de CA).
 
-### 1.2.1  Aspect Financier 
+### 1.2.1  Aspect Financier
 
 La règle courante de dépenses en maintenance est de 2 à 4 % par an de la valeur de remplacement  des équipements.
 
@@ -71,13 +71,13 @@ Par exemple, pour un équipement de  1 000 000 € (valeur à neuf) : le budge
 
 « pas assez de maintenance préventive augmente le risque de casses imprévues et génère des pertes de production, voir des urgences avec des pièces à livrer en express »
 
-### 1.2.2  Planification des opérations de maintenance. 
+### 1.2.2  Planification des opérations de maintenance.
 
 Les arrêts d’équipements pour maintenance, ne sont pas toujours compatibles avec les délais de clients.
 
 La possibilité d’estimer si une maintenance préventive peut être reportée par l’absence de détection de signaux d’usures éviterait des prises de risque de la part des entreprises.
 
-## 1.3          Les signaux de dégradations d’éléments de machines 
+## 1.3          Les signaux de dégradations d’éléments de machines
 
 La dégradation d’équipements peut s’identifier généralement par :
 
@@ -91,15 +91,17 @@ Dans ce projet, nous étudions les signaux vibratoires.
 
 Les datas utilisées sont issues d’une étude menée en 2000 par la CRWU ([Case Western Reserve University](https://case.edu/)) ,  Cleveland, Ohio, USA
 
-### 1.3.1  Présentation du banc de test (CRWU ) 
+### 1.3.1  Présentation du banc de test (CRWU )
 
 **Schémas de principe banc de test :**
 
-![](images/SchemasBancTestCRWU-2.png)
+![](images/SchemasBancTestCRWU.png)
+
+![](images/SchemasBancTestCRWU.png)
 
 **Photo banc de test :**
 
-![](images/CWRU_teststand.jpeg)
+![](https://github.com/Robin3992/BDS_Fault_Detection/blob/data_import/images/CWRU_teststand.jpeg)
 
 ### 1.3.2  Les défauts sur les roulements (banc de test)  
 
