@@ -66,9 +66,9 @@ La dégradation d’équipements peut s’identifier généralement par :
 
 Dans ce projet, nous étudions les signaux vibratoires.
 
-Les datas utilisées sont issues d’une étude menée en 2000 par la CRWU ([Case Western Reserve University](https://case.edu/)) ,  Cleveland, Ohio, USA
+Les datas utilisées sont issues d’une étude menée en 2000 par la CWRU ([Case Western Reserve University](https://case.edu/)) ,  Cleveland, Ohio, USA
 
-### 1.3.1  Présentation du banc de test (CRWU )
+### 1.3.1  Présentation du banc de test (CWRU)
 
 **Schémas de principe banc de test :**
 
@@ -77,6 +77,8 @@ Les datas utilisées sont issues d’une étude menée en 2000 par la CRWU ([Cas
 **Photo banc de test :**
 
 ![](https://github.com/Robin3992/BDS_Fault_Detection/tree/data_import/images/CWRU_teststand.jpeg){fig-align="center"}
+
+Le banc d'essai est composé d'un moteur de 2 chevaux, d'un capteur de couple et d'un dynamomètre imposant une **charge réglable**. La charge, exprimée en **HP (horsepower, cheval-vapeur)**, correspond au couple de freinage imposé à l'arbre : 0 HP = arbre quasi libre, 3 HP = arbre fortement freiné. Elle modifie progressivement la vitesse réelle de l'axe (1797 tr/min à 0 HP, 1730 tr/min à 3 HP) et influence ainsi les vibrations captées.
 
 ### 1.3.2  Les défauts sur les roulements (banc de test)  
 
@@ -104,7 +106,7 @@ Représentation des 5 points de défauts :
 
 ### 1.3.3  Données :
 
-Données publiques issues de CRWU  
+Données publiques issues de CWRU
 
 [Download a Data File \| Case School of Engineering](https://engineering.case.edu/bearingdatacenter/download-data-file)
 
@@ -114,22 +116,6 @@ Exemple de décomposition d’un signal vibratoire en plusieurs signaux simples
 
 ![](https://github.com/Robin3992/BDS_Fault_Detection/tree/data_import/images/Vibrations.png){fig-align="center"}
 
-## Objectif et données
-
-Comparer le signal vibratoire d'un roulement **sain** à celui d'un roulement présentant un **défaut de bague intérieure de 0,007"** (0,178 mm) créé par électro-érosion, sur le roulement **côté moteur (Drive End)**.
-
-Les données proviennent du **CWRU Bearing Data Center** (Case Western Reserve University) : un banc d'essai composé d'un moteur de 2 chevaux, d'un capteur de couple et d'un dynamomètre imposant une **charge réglable**. La charge, exprimée en **HP (horsepower, cheval-vapeur)**, correspond au couple de freinage imposé à l'arbre : 0 HP = arbre quasi libre, 3 HP = arbre fortement freiné. Elle modifie la vitesse réelle (1797 tr/min à 0 HP, 1772 tr/min à 1 HP) et la sévérité apparente des défauts. Nous travaillons ici à **0 HP (≈1797 tr/min)**.
-
-Chaque fichier `.mat` contient plusieurs canaux : `*_DE_time` (accéléromètre côté moteur, *Drive End*), `*_FE_time` (côté ventilateur, *Fan End*), `*_BA_time` (base) et `*RPM` (vitesse mesurée au démarrage). Un même défaut est vu différemment par chaque accéléromètre selon son chemin de mesure (distance, contacts mécaniques), d'où l'intérêt de les comparer.
-
-D'après la page *Apparatus & Procedures* du site, les signaux sont échantillonnés à **12 kHz**, et également à **48 kHz** pour certains cas.
-
-/! Attention : Les fichiers `.mat` ne contiennent pas toujours les mêmes canaux : Certains contiennent les canaux RPM et Base, d'autres non !
-
-Plutôt que de charger les fichiers un par un par leur numéro, on construit un **catalogue** de tout le jeu CWRU : chaque fichier y est désigné par un nom lisible (ex. `12kDE_IR007_L0` = défaut bague intérieure 0,007", côté moteur, 12 kHz, charge 0 HP), associé à son numéro de téléchargement, sa fréquence d'échantillonnage annoncée et sa vitesse nominale. Le chargement télécharge le fichier depuis le site au premier appel, puis le met en cache local.
-
-On charge le fichier d'échantillon sain et défaut pour le cas que nous étudions ici,
-et on affiche les caractéristiques des 2 fichiers .mat :
 ## Catalogue des données
 
 Les données proviennent des quatre pages de téléchargement du *Bearing Data
@@ -610,3 +596,370 @@ devra séparer les données par fichier ou par charge.
 - Construire un premier modèle de classification, avec une validation par
   charge (apprentissage sur trois charges, test sur la quatrième) et une
   correction du déséquilibre des classes.
+
+
+
+
+# Analyse spectrale
+
+## Objectif et contexte
+
+L'objectif est ici de faire une analyse fréquentielle de signal, de façon à localiser précisément et avec certitude l'emplacement du défaut.
+Le cas étudié ici concerne un **défaut de bague intérieure de 0,007"** (0,178 mm) sur le roulement **côté moteur (Drive End)** à une charge de **0 HP (≈1797 tr/min)**.
+Nous utiliserons les données de l'accéléromètre **côté moteur (Drive End)** et **côté ventilateur (Fan End)**
+
+Chaque fichier `.mat` contient plusieurs canaux : `*_DE_time` (accéléromètre côté moteur, *Drive End*), `*_FE_time` (côté ventilateur, *Fan End*), `*_BA_time` (base) et `*RPM` (vitesse mesurée au démarrage). Un même défaut est vu différemment par chaque accéléromètre selon son chemin de mesure (distance, contacts mécaniques), d'où l'intérêt de les comparer.
+
+**Remarque** : Les fichiers sources `.mat` ne contiennent pas toujours les mêmes canaux : Certains contiennent les canaux RPM et Base, d'autres non !
+
+On charge le fichier d'échantillon sain et défaut pour notre cas, et on affiche les caractéristiques des 2 fichiers .mat :
+
+```{python}
+# --- Fichiers étudiés : baseline saine et défaut bague intérieure, 0 HP ---
+NOM_SAIN   = "Normal_L0"
+NOM_DEFAUT = "12kDE_IR007_L0"
+
+sain   = charger(NOM_SAIN)
+defaut = charger(NOM_DEFAUT)
+
+for nom, s in [(NOM_SAIN, sain), (NOM_DEFAUT, defaut)]:
+    print(f"{nom:18s} {len(s['DE']):7d} points   fs={s['fs']} Hz   "
+          f"durée={len(s['DE'])/s['fs']:.1f} s   rpm={s['rpm']:.0f}   "
+          f"FE présent : {s['FE'] is not None}   BA présent : {s['BA'] is not None}")
+```
+
+## Fréquences caractéristiques des défauts
+
+La géométrie de chaque roulement (SKF 6205-RS côté moteur, 6203-RS côté ventilateur) fixe des fréquences caractéristiques (Hz) proportionnelles à la fréquence de rotation, qui indiquent où chercher la signature de chaque type de défaut :
+
+- **BPFI** (*Ball Pass Frequency Inner*) : passage des billes sur la piste intérieure ;
+- **BPFO** (*Ball Pass Frequency Outer*) : piste extérieure ;
+- **BSF** (*Ball Spin Frequency*) : rotation d'une bille sur elle-même ;
+- **FTF** (*Fundamental Train Frequency*) : rotation de la cage.
+
+Ces valeurs servent de référence pour **toutes** les analyses ci-dessous. Le défaut étant sur le roulement **côté moteur**, ce sont les caractéristiques du roulement **DE** qui nous intéressent.
+
+```{python}
+COEFF_FREQ = {  # coefficients × fréquence de rotation, source CWRU
+    "DE": {"BPFI": 5.4152, "BPFO": 3.5848, "BSF": 4.7135, "FTF": 0.39828},
+    "FE": {"BPFI": 4.9469, "BPFO": 3.0530, "BSF": 3.9874, "FTF": 0.3817},
+}
+
+RPM = defaut["rpm"]  # vitesse du fichier si présente, sinon nominale du catalogue
+
+def freqs_caracteristiques(roulement, rpm=RPM):
+    """Fréquences caractéristiques (Hz) du roulement 'DE' ou 'FE'."""
+    f_rot = rpm / 60
+    return {nom: coef * f_rot for nom, coef in COEFF_FREQ[roulement].items()}
+
+pd.DataFrame({roulement: freqs_caracteristiques(roulement)
+              for roulement in ("DE", "FE")}).round(1)
+```
+
+## Validation des données
+
+Avant toute analyse, on vérifie la cohérence des signaux chargés : nombre de points, durée (calculée avec la fréquence annoncée par le catalogue), valeurs aberrantes et plage d'amplitude.
+
+```{python}
+#  tbl-cap: "Résumé des signaux, durées calculées avec le fs annoncé par le catalogue."
+
+SIGNAUX = {  # nom: (signaux, canal, condition)
+    "Sain — moteur (DE)":        (sain,   "DE", "Sain"),
+    "Sain — ventilateur (FE)":   (sain,   "FE", "Sain"),
+    "Défaut — moteur (DE)":      (defaut, "DE", "Défaut"),
+    "Défaut — ventilateur (FE)": (defaut, "FE", "Défaut"),
+}
+
+resume = pd.DataFrame([
+    {"Condition": nom,
+     "Points": len(s[canal]),
+     "fs (Hz)": s["fs"],
+     "Durée (s)": round(len(s[canal]) / s["fs"], 2),
+     "Min (g)": round(s[canal].min(), 2),
+     "Max (g)": round(s[canal].max(), 2),
+     "NaN / Inf": int(np.sum(~np.isfinite(s[canal])))}
+    for nom, (s, canal, _) in SIGNAUX.items()
+])
+resume
+```
+
+Aucune valeur manquante ni aberrante. 
+Les deux fichiers devraient avoir la même fréquence d'échantillonnage selon les indications du site CWRU (12 kHz), cependant on constate un rapport de 2 entre le sain et le défaut, sur la durée et également le nombre de point.
+On soupçonne ici une fréquence d'échantillonage à **24KHz** sur le sain, ce qui serait plus cohérent.
+Gardons **12KHz** comme indiqué pour le moment, mais ce point devra néanmoins être confirmé sur le signal lui-même dans la suite du projet.
+La fréquence d'échantillonnage n'est pas stockée dans les fichiers `.mat`, et notre catalogue repose sur les données textuelles du site CWRU. Si une incohérence apparaît lors des analyses spectrales, une des pistes pourrait être un problème de fréquence d'échantillonnage.
+
+## Styles de tracé
+
+Pour une meilleure lisibilité, nous avons attribué un style fixe à chaque données. 
+- **Chaque état du roulement** a une couleur (vert = sain, rouge = défaut) 
+- **Chaque canal** a un style de trait (plein = Drive End, tirets = Fan End)
+On peut ainsi identifier état et canal sur n'importe quel graphique sans lire la légende.
+
+```{python}
+STYLES = {
+    "condition": {"Sain": "#149C07", "Défaut": "#C82909"},
+    "canal":     {"DE": "-",        "FE": "--"},
+}
+STYLES_RAIES = {  # fréquences caractéristiques
+    "BPFI": ("purple", "-"),
+    "BPFO": ("blue",   "--"),
+    "BSF":  ("orange", "-."),
+    "FTF":  ("green",  ":"),
+}
+
+def tracer_temps(x, fs, ax, condition, canal, titre):
+    n = int(0.1 * fs)
+    ax.plot(np.arange(n) / fs, x[:n],
+            color=STYLES["condition"][condition],
+            ls=STYLES["canal"][canal], lw=0.7)
+    ax.set_title(titre, loc="left")
+    ax.set_xlabel("Temps (s)")
+    ax.set_ylabel("Accélération (g)")
+    ax.grid(alpha=0.3)
+```
+
+## Signaux temporels
+
+On visualise 0,1 seconde de signal, **en secondes** plutôt qu'en points, à échelle d'amplitude commune. Le défaut étant côté moteur, c'est le canal DE qui porte la signature ; le canal FE sert de comparaison.
+
+```{python}
+#| fig-cap: "0,1 seconde de signal ; vert = sain, rouge = défaut ; trait plein = Drive End, tirets = Fan End."
+
+fig, axes = plt.subplots(2, 2, figsize=(12, 5), sharex=True, sharey=True)
+for ax, (nom, (s, canal, cond)) in zip(axes.flat, SIGNAUX.items()):
+    tracer_temps(s[canal], s["fs"], ax, cond, canal, nom)
+plt.tight_layout(); plt.show()
+```
+
+Le signal sain a une faible amplitude, les valeurs se concentrent autour de zéro, sans pics ni structure périodique ; c'est le comportement attendu d'un roulement en bon état. 
+Sur le canal moteur défectueux, l'amplitude est plus élevée, et on voit des pics et une structure périodique. Ces structures correspondent aux **chocs** du passage d'une bille sur le défaut de la piste intérieure. Le défaut étant sur le roulement moteur, c'est la **BPFI du roulement DE** qui est attendue. On constate qu'avec ce simple tracé temporel, les chocs restent difficiles à distinguer du bruit : l'analyse doit être poussée.
+
+```{python}
+#| fig-cap: "Zoom sur 30 ms du signal défectueux ; les repères sont espacés de la période BPFI théorique."
+
+BPFI_DE = freqs_caracteristiques("DE")["BPFI"]
+fs = defaut["fs"]
+
+x = defaut["DE"]
+n = int(0.03 * fs)
+t = np.arange(n) / fs
+fig, ax = plt.subplots(figsize=(10, 3))
+ax.plot(t, x[:n], color="red", ls="-", lw=0.8, label="Signal")
+ax.vlines(np.arange(0, t[-1], 1 / BPFI_DE), *ax.get_ylim(),
+          colors="crimson", ls=":", lw=1,
+          label=f"Période BPFI ≈ {BPFI_DE:.0f} Hz")
+ax.set_title("Défaut bague intérieure — repérage des chocs", loc="left")
+ax.set_xlabel("Temps (s)"); ax.set_ylabel("Accélération (g)")
+ax.legend(loc="upper right", fontsize=8); ax.grid(alpha=0.3)
+plt.tight_layout(); plt.show()
+```
+
+## Analyse spectrale : tranformation de Fourier (FFT)
+
+Pour analyser chaque signal, nous utilisons la transformée de Fourier (FFT), ce qui nous donne une visualisation du spectre de fréquence de chaque signal.
+L'analyse du spectre d'un signal permet de visualiser l'amplitude du signal pour chaque fréquence.
+Ainsi, on voit clairement quelles fréquences sont exitées, et celles qui ne le sont pas :
+
+```{python}
+#| fig-cap: "Spectres d'amplitude FFT : le défaut ajoute de l'énergie haute fréquence."
+
+def spectre_fft(x, fs):
+    """Spectre d'amplitude : renvoie (fréquences, amplitudes)."""
+    n = len(x)
+    freqs = fftfreq(n, d=1 / fs)[: n // 2]
+    # amp = np.abs(fft(x))[: n // 2] * 2 / n
+    # ajout de "- np.mean(x)" pour supprimer la composante continue du signal
+    amp = np.abs(fft(x - np.mean(x)))[: n // 2] * 2 / n
+    return freqs, amp
+
+def tracer_fft(ax, x, fs, condition, canal, titre,
+               roulement=None, x_max=None):
+    freqs, amp = spectre_fft(x, fs)
+    ax.plot(freqs, amp, color=STYLES["condition"][condition],
+            ls=STYLES["canal"][canal], lw=0.5)
+    ax.set_title(titre, loc="left")
+    ax.set_xlim(0, x_max if x_max else fs / 2)
+    ax.set_xlabel("Fréquence (Hz)")
+    ax.grid(alpha=0.3)
+    if roulement:  # raies caractéristiques + harmoniques 2x, 3x
+        for nom, val in freqs_caracteristiques(roulement).items():
+            couleur, ls = STYLES_RAIES[nom]
+            ax.axvline(val, color=couleur, ls=ls, lw=1.8, alpha=0.4,
+                       label=f"{nom} = {val:.1f} Hz")
+            for k in range(2, 4):
+                if k * val < (x_max or fs / 2):
+                    ax.axvline(k * val, color=couleur, ls=ls,
+                               lw=0.8, alpha=0.2)
+        ax.legend(loc="upper right", fontsize=8, framealpha=0.7)
+
+fig, axes = plt.subplots(2, 2, figsize=(12, 6), sharey=True)
+for colonne, canal in enumerate(("DE", "FE")):
+    for ligne, condition in enumerate(("Sain", "Défaut")):
+        nom = [n for n in SIGNAUX
+               if n.endswith(f"({canal})") and n.startswith(condition)][0]
+        s, can, cond = SIGNAUX[nom][0], canal, condition
+        tracer_fft(axes[ligne, colonne], s[canal], s["fs"], cond, can, nom)
+        if colonne == 0:
+            axes[ligne, colonne].set_ylabel("Amplitude")
+plt.tight_layout(); plt.show()
+```
+
+## Les raies de fréquences caractéristiques
+
+La FFT brute mélange bruit de fond, raies de rotation et signature du défaut. Pour identifier l'emplacement du défaut, on zoome sur les basses fréquences et on superpose les fréquences caractéristiques définies plus haut (BPFI, BPFO, BSF, FTF — fondamentales en trait épais, harmoniques 2x et 3x en trait fin). Le défaut étant sur le roulement moteur, c'est la BPFI du roulement DE qui doit dominer sur le canal moteur.
+
+```{python}
+#| fig-cap: "FFT basse fréquence du signal défectueux avec raies caractéristiques (fondamentales et harmoniques)."
+
+fs = defaut["fs"]
+
+# Fenêtre d'affichage : jusqu'à 3,5 × la raie BPFI la plus haute
+X_MAX = max(freqs_caracteristiques(r)["BPFI"] for r in ("DE", "FE")) * 3.5
+
+# Chaque spectre n'est calculé qu'une seule fois
+SPECTRES_DEFAUT = {canal: spectre_fft(defaut[canal], fs)
+                   for canal in ("DE", "FE")}
+Y_MAX = max(amp[(freqs >= 0) & (freqs <= X_MAX)].max()
+            for freqs, amp in SPECTRES_DEFAUT.values())
+
+fig, axes = plt.subplots(2, 1, figsize=(12, 7), sharey=True)
+for ax, (canal, (freqs, amp)) in zip(axes, SPECTRES_DEFAUT.items()):
+    tracer_fft(ax, defaut[canal], fs, "Défaut", canal, f"Défaut — {canal}",
+               roulement=canal, x_max=X_MAX)
+    ax.set_ylim(0, Y_MAX * 1.05)
+    ax.set_ylabel("Amplitude")
+plt.tight_layout(); plt.show()
+```
+
+Sur la FFT brute, on voit une correspondance sur la raie **BPFI** côté moteur (roulement défectueux), mais le pic dominant (≈450Hz) n'est associé à aucune raie caractéristique : difficulté à conclure avec certitude. Une analyse spectrale de l'enveloppe du signal (pluôt que du signal lui-même), devrait améliorer l'identification.
+
+## Analyse d'enveloppe
+
+L'objectif global est de **rendre le rythme des chocs mesurable** : les chocs sont périodiques, mais leur périodicité n'est pas clair dans le spectre brut car chaque choc excite en réalité une résonance structurelle haute fréquence, amortie en quelques millisecondes. Les quatre étapes visent à isoler, puis compter, ce rythme :
+
+1.  **Filtre passe-bande** (1–4 kHz) : *ne garder que la bande de résonance* excitée par les chocs. Objectif : supprimer les basses fréquences (raies de rotation, bruit du banc) et le bruit hors bande qui masquent les chocs.
+2.  **Démodulation de Hilbert** : *extraire l'amplitude instantanée du signal filtré*. Objectif : passer du signal oscillant (la résonance qui « sonne » à chaque choc) à son enveloppe — un train d'impulsions dont un pic = un choc, comme un récepteur radio AM extrait le message de l'onde porteuse.
+3.  **FFT de l'enveloppe** : *révéler la périodicité des chocs*. Objectif : un train d'impulsions de période T se décompose en raies à 1/T, 2/T, 3/T… — la fondamentale tombe exactement sur la fréquence caractéristique du défaut, et ses harmoniques la confirment.
+4.  **Superposition des raies caractéristiques** (définies plus haut) : *identifier le type de défaut*. Objectif : associer les raies observées aux valeurs théoriques BPFI / BPFO / BSF / FTF — la raie dominante désigne le défaut présent.
+
+```{python}
+#| fig-cap: "Les étapes de l'analyse d'enveloppe sur le signal défectueux (côté moteur)."
+
+BANDE_RESONANCE = (1000, 4000)  # bande de résonance isolée (Hz)
+N_FFT = 2 ** 14
+
+def filtrer_passe_bande(x, fs, bande=BANDE_RESONANCE):
+    sos = sci.butter(4, [bande[0] / (fs / 2), bande[1] / (fs / 2)],
+                     btype="bandpass", output="sos")
+    return sci.sosfiltfilt(sos, x)     # zero-phase : chocs non décalés
+
+def extraire_enveloppe(x):
+    env = np.abs(hilbert(x))
+    return env - np.mean(env)          # retire le pic à 0 Hz
+
+def spectre_enveloppe(x, fs, bande=BANDE_RESONANCE, n_fft=N_FFT):
+    """Chaîne complète : passe-bande + Hilbert + FFT."""
+    env = extraire_enveloppe(filtrer_passe_bande(x, fs, bande))
+    fenetre = np.hanning(len(env))
+    freqs = np.fft.rfftfreq(n_fft, d=1 / fs)
+    amp = np.abs(np.fft.rfft(env * fenetre, n=n_fft)) / np.sum(fenetre) * 2
+    return freqs, amp
+
+fs = defaut["fs"]
+x = defaut["DE"]
+x_filtre = filtrer_passe_bande(x, fs)
+enveloppe = extraire_enveloppe(x_filtre)
+t = np.arange(len(x)) / fs
+
+fig, axes = plt.subplots(4, 1, figsize=(12, 11))
+vues = [
+    (f"1. Signal brut — chocs noyés dans les résonances (Défaut — {canal})", x, "red", "-"),
+    (f"2. Après filtre passe-bande {BANDE_RESONANCE[0]}–{BANDE_RESONANCE[1]} Hz",
+     x_filtre, "tab:blue", "-"),
+    ("3. Enveloppe (Hilbert) — le rythme des chocs apparaît",
+     enveloppe, "tab:green", "-"),
+]
+for ax, (titre, sig, couleur, ls) in zip(axes, vues):
+    n = int(0.05 * fs)
+    ax.plot(t[:n], sig[:n], color=couleur, ls=ls, lw=0.8)
+    ax.set_title(titre, loc="left")
+    ax.set_ylabel("Amplitude")
+    ax.grid(alpha=0.3)
+
+freqs_env, amp_env = spectre_enveloppe(x, fs)
+ax = axes[3]
+ax.plot(freqs_env, amp_env, color="tab:red", lw=0.8)
+ax.set_title("4. FFT de l'enveloppe — raies caractéristiques nettes", loc="left")
+ax.set_ylabel("Amplitude d'enveloppe")
+ax.set_xlabel("Fréquence (Hz)")
+ax.set_xlim(0, X_MAX)
+for nom, val in freqs_caracteristiques("DE").items():
+    couleur, ls = STYLES_RAIES[nom]
+    ax.axvline(val, color=couleur, ls=ls, lw=1.5, alpha=0.5,
+               label=f"{nom} = {val:.1f} Hz")
+
+    for k in range(2, 4):              # harmoniques 2x et 3x
+        if k * val < X_MAX:
+            ax.axvline(k * val, color=couleur, ls=ls, lw=0.8, alpha=0.2)
+
+
+ax.legend(loc="upper right", fontsize=8, framealpha=0.7)
+ax.grid(alpha=0.3)
+plt.tight_layout(); plt.show()
+```
+
+Le pic à **BPFI** domine désormais le spectre d'enveloppe côté moteur, confirmé par ses harmoniques : signature d'un défaut de bague intérieure. Appliquons maintenant cette analyse aux deux signaux DE et FE :
+
+```{python}
+#| fig-cap: "Spectres d'enveloppe avec raies caractéristiques, pour les canaux moteur et ventilateur."
+
+fs = defaut["fs"]
+
+# Chaque spectre d'enveloppe n'est calculé qu'une seule fois
+ENVELOPPES_DEFAUT = {canal: spectre_enveloppe(defaut[canal], fs)
+                     for canal in ("DE", "FE")}
+Y_MAX = max(amp[(freqs >= 0) & (freqs <= X_MAX)].max()
+            for freqs, amp in ENVELOPPES_DEFAUT.values())
+
+fig, axes = plt.subplots(2, 1, figsize=(12, 7), sharey=True)
+for ax, (canal, (freqs_env, amp_env)) in zip(axes, ENVELOPPES_DEFAUT.items()):
+    ax.plot(freqs_env, amp_env, color="red",
+            ls=STYLES["canal"][canal], lw=0.5)
+    ax.set_title(f"Défaut — {canal}  (filtre "
+                 f"{BANDE_RESONANCE[0]}–{BANDE_RESONANCE[1]} Hz)", loc="left")
+    ax.set_xlim(0, X_MAX)
+    ax.set_ylim(0, Y_MAX * 1.05)
+    for nom, val in freqs_caracteristiques(canal).items():
+        couleur, ls = STYLES_RAIES[nom]
+        ax.axvline(val, color=couleur, ls=ls, lw=1.8, alpha=0.4,
+                   label=f"{nom} = {val:.1f} Hz")
+        for k in range(2, 4):
+            if k * val < X_MAX:
+                ax.axvline(k * val, color=couleur, ls=ls, lw=0.8, alpha=0.2)
+    ax.legend(loc="upper right", fontsize=8, framealpha=0.7)
+    ax.set_ylabel("Amplitude d'enveloppe")
+    ax.grid(alpha=0.3)
+axes[-1].set_xlabel("Fréquence (Hz)")
+plt.tight_layout(); plt.show()
+```
+
+La raie **BPFI** ressort nettement sur le canal moteur (roulement défectueux) et, de façon atténuée, sur le canal ventilateur qui « entend » également ce défaut, de façon plus « lointaine » : l'écart d'amplitude traduit l'atténuation dûe à la distance entre les accéléromètres. Malgré que la raie **BPFI** du moteur apparaisse également sur le spectre du ventilateur, elle ne correspond pas à la raie **BPFI** du roulement ventilateur, car sa fréquence caractéristique est différente. Contrairement à la FFT brute, l'analyse d'enveloppe identifie le défaut avec certitude.
+
+## Conclusion et perspectives
+
+- Le défaut de bague intérieure se manifeste par des **chocs périodiques** à BPFI, invisibles sur la FFT brute mais nets sur le **spectre d'enveloppe** après filtrage passe-bande et démodulation de Hilbert.
+- Les **indicateurs statistiques** (RMS, crête, kurtosis) séparent déjà un roulement sain d'un roulement défectueux : de bons candidats comme variables d'entrée pour une classification automatique.
+
+Étapes suivantes pour le rapport d'exploration complet :
+
+1.  étendre l'analyse aux autres défauts (piste extérieure `OR007`, bille `B007`) et aux autres sévérités (0,014", 0,021") — le catalogue rend chaque fichier accessible par son nom ;
+2.  étudier l'effet de la charge (0–3 HP) et de la vitesse sur les indicateurs et sur la position des raies ;
+3.  découper les signaux en fenêtres et vérifier la stationnarité des indicateurs, préalable à la construction d'un jeu de données d'apprentissage ;
+4.  quantifier l'atténuation du chemin de mesure en comparant les canaux DE, FE et BA.
+
+Points d'attentions :
+- La fréquence d'échantillonnage des fichiers CWRU n'est pas documentée de façon fiable dans les fichiers eux-mêmes : le catalogue repose sur les données textuelles du site.
+La **vérification de la fréquence d'échantillonnage** de chaque signal pourrait permettre d'analyser d'autres données sans avoir cette information.
+- La fréquence de rotation est elle aussi peu fiable car dans certains cas, le RPM affiché sur le site est différent de celui des fichiers `.mat`. Une extraction directement sur base du signal permettrait également de généraliser à d'autres signaux. 
+À noter que cette fréquence de rotation pourrait varier au cours d'un même échantillon, ce qui fausserait l'analyse spectrale.
