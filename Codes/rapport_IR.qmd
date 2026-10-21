@@ -59,7 +59,9 @@ La possibilité d’estimer si une maintenance préventive peut être reportée 
 La dégradation d’équipements peut s’identifier généralement par :
 
 ·       des bruits « anormaux »
+
 ·       des températures qui augmentent
+
 ·       des vibrations des équipements
 
 Dans ce projet, nous étudions les signaux vibratoires.
@@ -83,7 +85,9 @@ Le banc d'essai est composé d'un moteur de 2 chevaux, d'un capteur de couple et
 Les défauts de surface ont étés par électro érosion en différents points des roulements :
 
 ·       Bague intérieure
+
 ·       Bille
+
 ·       Bague extérieure « fixe » en trois positions ( 12 :00, 3 :00 et 6 :00)
 et avec des profondeurs différentes :
 
