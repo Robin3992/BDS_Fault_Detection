@@ -589,6 +589,13 @@ devra séparer les données par fichier ou par charge.
 
 # Analyse exploratoire : spectres
 
+## Prologue
+
+L'analyse qui suit explore un seul cas de notre dataset.
+Chaque étape vise à améliorer la caractérisation du défaut dans le signal.
+L'objectif est de traduire un signal brut en indicateurs fiables permettant de caractériser le défaut.
+Ces traitements seront ensuite appliqués sur le plan factoriel de 40 fichiers définit dans la précédente analyse.
+
 ## Objectif
 
 L'objectif est ici de faire une analyse fréquentielle de signal, de façon à localiser précisément et avec certitude l'emplacement du défaut.
@@ -821,7 +828,7 @@ Sur la FFT brute, on voit une correspondance sur la raie **BPFI** côté moteur 
 L'objectif global est de **rendre le rythme des chocs mesurable** : les chocs sont périodiques, mais leur périodicité n'est pas clair dans le spectre brut car chaque choc excite en réalité une résonance structurelle haute fréquence, amortie en quelques millisecondes. Les quatre étapes visent à isoler, puis compter, ce rythme :
 
 1.  **Filtre passe-bande** (1–4 kHz) : *ne garder que la bande de résonance* excitée par les chocs. Objectif : supprimer les basses fréquences (raies de rotation, bruit du banc) et le bruit hors bande qui masquent les chocs.
-2.  **Démodulation de Hilbert** : *extraire l'amplitude instantanée du signal filtré*. Objectif : passer du signal oscillant (la résonance qui « sonne » à chaque choc) à son enveloppe — un train d'impulsions dont un pic = un choc, comme un récepteur radio AM extrait le message de l'onde porteuse.
+2.  **Démodulation de Hilbert** : *extraire l'amplitude instantanée du signal filtré*. Objectif : passer du signal oscillant (la résonance qui « sonne » à chaque choc) à son enveloppe — un train d'impulsions dont un pic = un choc.
 3.  **FFT de l'enveloppe** : *révéler la périodicité des chocs*. Objectif : un train d'impulsions de période T se décompose en raies à 1/T, 2/T, 3/T… — la fondamentale tombe exactement sur la fréquence caractéristique du défaut, et ses harmoniques la confirment.
 4.  **Superposition des raies caractéristiques** (définies plus haut) : *identifier le type de défaut*. Objectif : associer les raies observées aux valeurs théoriques BPFI / BPFO / BSF / FTF — la raie dominante désigne le défaut présent.
 
@@ -856,7 +863,7 @@ t = np.arange(len(x)) / fs
 
 fig, axes = plt.subplots(4, 1, figsize=(12, 11))
 vues = [
-    (f"1. Signal brut — chocs noyés dans les résonances (Défaut — {canal})", x, "red", "-"),
+    (f"1. Signal brut — chocs noyés dans les résonances (Défaut — DE)", x, "red", "-"),
     (f"2. Après filtre passe-bande {BANDE_RESONANCE[0]}–{BANDE_RESONANCE[1]} Hz",
      x_filtre, "tab:blue", "-"),
     ("3. Enveloppe (Hilbert) — le rythme des chocs apparaît",
@@ -877,6 +884,8 @@ ax.set_ylabel("Amplitude d'enveloppe")
 ax.set_xlabel("Fréquence (Hz)")
 ax.set_xlim(0, X_MAX)
 for nom, val in freqs_caracteristiques("DE").items():
+    if nom != "BPFI":
+        continue
     couleur, ls = STYLES_RAIES[nom]
     ax.axvline(val, color=couleur, ls=ls, lw=1.5, alpha=0.5,
                label=f"{nom} = {val:.1f} Hz")
@@ -891,7 +900,8 @@ ax.grid(alpha=0.3)
 plt.tight_layout(); plt.show()
 ```
 
-Le pic à **BPFI** domine désormais le spectre d'enveloppe côté moteur, confirmé par ses harmoniques : signature d'un défaut de bague intérieure. Appliquons maintenant cette analyse aux deux signaux DE et FE :
+Le pic à **BPFI** domine désormais le spectre d'enveloppe côté moteur, confirmé par ses harmoniques : signature d'un défaut de bague intérieure. 
+Appliquons maintenant cette analyse aux deux signaux moteur et ventilateur :
 
 ```{python}
 #| fig-cap: "Spectres d'enveloppe avec raies caractéristiques, pour les canaux moteur et ventilateur."
@@ -914,7 +924,7 @@ for ax, (canal, (freqs_env, amp_env)) in zip(axes, ENVELOPPES_DEFAUT.items()):
     ax.set_ylim(0, Y_MAX * 1.05)
     for nom, val in freqs_caracteristiques(canal).items():
         couleur, ls = STYLES_RAIES[nom]
-        ax.axvline(val, color=couleur, ls=ls, lw=1.8, alpha=0.4,
+        ax.axvline(val, color=couleur, ls=ls, lw=1.8, alpha=0.5,
                    label=f"{nom} = {val:.1f} Hz")
         for k in range(2, 4):
             if k * val < X_MAX:
