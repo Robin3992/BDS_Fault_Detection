@@ -961,13 +961,18 @@ La **vérification de la fréquence d'échantillonnage** de chaque signal pourra
 - La fréquence de rotation est elle aussi peu fiable car dans certains cas, le RPM affiché sur le site est différent de celui des fichiers `.mat`. Une extraction directement sur base du signal permettrait également de généraliser à d'autres signaux. 
 À noter que cette fréquence de rotation pourrait varier au cours d'un même échantillon, ce qui fausserait l'analyse spectrale.
 
+# Conclusion globale
+
+- **Détection et caractérisation d'un défaut :** Les analyses permettent d'identifier clairement l'emplacement et le type de défaut.
+
+- **Sévérité.** Ni l'analyse d'indicateur ni l'analyse spectrale ne nous permettent d'estimer la sévérité d'un défaut pour le moment.
+
+- **Durée de vie résiduelle.** Aucune de nos analyses ne nous permet d'estimer cette durée. Le dataset disponible n'ayant pas d'évolution dans le temps, il semble difficile d'avancer sur la question.
 
 # Suite proposée
 
-1.  étendre l'analyse aux autres défauts.
-2.  étudier l'effet de la charge (0–3 HP) et de la vitesse sur la position des raies.
-3.  découper les signaux en fenêtres et vérifier la stationnarité des indicateurs, préalable à la construction d'un jeu de données d'apprentissage.
-4.  quantifier l'atténuation du chemin de mesure en comparant les canaux DE, FE et BA.
-5. Construire un premier modèle de classification, avec une validation par
-  charge (apprentissage sur trois charges, test sur la quatrième) et une
-  correction du déséquilibre des classes.
+1.  Avancer sur les questions relatives à la fréquence d'échantillonnage et la vitesse de rotation des échantillons
+2.  Créer des indicateurs sur base de l'analyse spectrale
+3.  Ajouter ces indicateurs dans le jeu de données d'apprentissage.
+4.  Définir les règles et seuils puis construire un premier modèle de référence
+5.  Améliorer le feature engineering et tester d'autres modèles plus complexes
