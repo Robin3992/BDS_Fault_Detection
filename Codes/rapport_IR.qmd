@@ -91,10 +91,10 @@ Les défauts de surface ont étés par électro érosion en différents points d
 ·       Bague extérieure « fixe » en trois positions ( 12 :00, 3 :00 et 6 :00)
 et avec des profondeurs différentes :
 
-    ·       0,007' '      (=  0, 178 mm)       (1' '  équivalent  25,4 mm)
-    ·       0,014' '       (=  0, 356 mm) 
-    ·       0,021' '       (=  0, 533 mm) 
-    ·       0,028' '      (=  0, 711 mm)   
+    ·       0,007''      (=  0, 178 mm)       (1''  équivalent  25,4 mm)
+    ·       0,014''       (=  0, 356 mm) 
+    ·       0,021''       (=  0, 533 mm) 
+    ·       0,028''      (=  0, 711 mm)   
 
 Représentation des 5 points de défauts :
 
@@ -376,6 +376,59 @@ table.to_csv("../data/features/table_indicateurs.csv", index=False)
 table.groupby(["classe", "charge_hp"]).size().unstack()
 ```
 
+### Structure de la table des indicateurs
+
+La table obtenue compte `{python} len(table)` lignes et
+`{python} table.shape[1]` colonnes. Chaque **ligne** correspond à une
+**fenêtre de 0,2 s** d'un enregistrement : un même fichier fournit donc
+plusieurs dizaines de lignes (environ 50 pour un fichier de défaut,
+100 à 200 pour un fichier sain, plus long).
+
+Les **colonnes** se répartissent en quatre groupes, décrits dans le
+@tbl-dictionnaire.
+
+| Groupe | Colonne | Contenu |
+|:--|:--|:--|
+| Identification | `fichier` | Nom lisible du fichier (ex. `12kDE_IR007_L0`) |
+| | `numero` | Numéro du fichier sur le site CWRU |
+| | `fenetre` | Rang de la fenêtre dans le fichier (0, 1, 2…) |
+| Conditions d'essai | `source` | Page d'origine (`Normal` ou `12kDE`) |
+| | `fs` | Fréquence d'échantillonnage (Hz) |
+| | `charge_hp` | Charge du moteur (0 à 3 HP) |
+| | `rpm_nominal` | Vitesse annoncée par le site (tr/min) |
+| | `rpm` | Vitesse mesurée dans le fichier (tr/min) |
+| Étiquettes | `defaut` | Localisation : Sain, IR, B ou OR |
+| | `diametre_mils` | Diamètre du défaut, en millièmes de pouce |
+| | `position_OR` | Position du défaut de bague extérieure (6 h) |
+| | `classe` | Étiquette des 10 classes (ex. `IR007`, `Sain`) |
+| Indicateurs | `RMS` | Valeur efficace : énergie de la vibration |
+| | `Pic` | Amplitude maximale en valeur absolue |
+| | `Crete` | Facteur de crête : Pic / RMS |
+| | `Kurtosis` | Aplatissement (3 pour une loi normale) |
+
+: Description des colonnes de la table des indicateurs. {#tbl-dictionnaire}
+
+Les colonnes d'identification et de conditions d'essai sont recopiées du
+catalogue pour chaque fenêtre : la table est ainsi autonome, et chaque
+observation peut être regroupée par fichier, par charge ou par classe sans
+recourir à une autre source. La colonne `classe` constitue la variable
+à prédire pour la classification ; les quatre indicateurs en sont les
+variables explicatives. La colonne `fichier` servira à séparer les données
+d'apprentissage et de test, afin que les fenêtres d'un même enregistrement
+ne se retrouvent pas des deux côtés.
+
+Le @tbl-extrait en donne un extrait.
+
+```{python}
+#| label: tbl-extrait
+#| tbl-cap: "Extrait de la table des indicateurs (trois premières fenêtres de deux fichiers)."
+extrait = (table[table["fichier"].isin(["Normal_L0", "12kDE_IR007_L0"])]
+           .groupby("fichier").head(3)
+           [["fichier", "fenetre", "charge_hp", "classe",
+             "RMS", "Pic", "Crete", "Kurtosis"]]
+           .round(3))
+Markdown(extrait.to_markdown(index=False))
+```
 <!--
 Ce que fait ce bloc
 La boucle parcourt les 40 fichiers de selection. Pour chacun, elle lit le signal avec charger, puis le découpe en enêtres de 0,2 s.
