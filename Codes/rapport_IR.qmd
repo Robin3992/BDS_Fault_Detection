@@ -640,18 +640,259 @@ devra séparer les données par fichier ou par charge.
 
 
 
-# Analyse exploratoire : spectres
-
-## Prologue
-
-L'analyse qui suit explore un seul cas de notre dataset.
-Chaque étape vise à améliorer la caractérisation du défaut dans le signal.
-L'objectif est de traduire un signal brut en indicateurs fiables permettant de caractériser le défaut.
-Ces traitements seront ensuite appliqués sur le plan factoriel de 40 fichiers définit dans la précédente analyse.
+# Analyse exploratoire : spectres de fréquences
 
 ## Objectif
 
-L'objectif est ici de faire une analyse fréquentielle de signal, de façon à localiser précisément et avec certitude l'emplacement du défaut.
+Créer de indicateurs fréquentiels pour distinguer les défauts de roulement, et comparer leur pertinence par rapport à celle des indicateurs temporels étudiés précédemment.
+
+## La transformée de Fourier
+
+Avant toute analyse, commençons par comprendre le fonctionnement de la **transformée de Fourier** et ses limites, car elle sera notre outil principal pour l'analyse fréquentielle.
+
+> La **transformée de Fourier** décompose un signal en sinusoïdes pures : elle transforme la description *temporelle* (amplitude en fonction du temps) en description *fréquentielle* (amplitude en fonction de la fréquence). Le **spectre** obtenu montre, pour chaque fréquence, si elle est présente dans le signal et avec quelle intensité — une composante périodique devient une **raie** nette. 
+
+$$
+X(f) = \int_{-\infty}^{+\infty} x(t)\, e^{-i\, 2\pi f t}\, dt
+$$ {#eq-fourier}
+
+- $X(f)$ est un nombre **complexe** : son module $\lvert X(f) \rvert$
+  donne l'**amplitude** de la fréquence $f$ dans le signal, son
+  argument la **phase** ;
+- la transformée inverse
+  $x(t) = \int_{-\infty}^{+\infty} X(f)\, e^{+i\, 2\pi f t}\, df$
+  reconstruit le signal : aucune information n'est perdue.
+
+Exemple :
+
+```{python}
+#| label: fig-spectre
+#| fig-cap: "Décomposition d'un signal synthétique : composantes temporelles (gauche) et spectrales (droite)."
+# Définitions fonctions
+def spectre_fft(x, fs):
+    """Spectre d'amplitude : renvoie (fréquences, amplitudes)."""
+    n = len(x)
+    freqs = fftfreq(n, d=1 / fs)[: n // 2]
+    amp = np.abs(fft(x - np.mean(x)))[: n // 2] * 2 / n # ajout de "- np.mean(x)" pour supprimer la composante continue du signal
+    return freqs, amp
+
+fs = 12_000
+t = np.arange(0, 1, 1 / fs)
+x30hz = 1.0 * np.sin(2 * np.pi * 30 * t)      # "rotation" à 30 Hz
+x162hz = 0.5 * np.sin(2 * np.pi * 162 * t)    # "défaut" à 162 Hz
+xbruit = 0.3 * np.random.randn(len(t))        # bruit 
+xtot = x30hz + x162hz + xbruit
+
+# --- Calcul des spectres (une seule fois par composante) ---
+f_30hz, a30 = spectre_fft(x30hz, fs)
+f_162hz, a162 = spectre_fft(x162hz, fs)
+f_bruit, a_bruit = spectre_fft(xbruit, fs)
+f_tot, a_tot = spectre_fft(xtot, fs)
+
+fig, axes = plt.subplots(4, 2, figsize=(14, 10), sharex="col")
+
+# Colonne 0 : signaux temporels — Colonne 1 : spectres
+signaux = [
+    (x30hz,  f_30hz,  a30,     "30 Hz (rotation)"),
+    (x162hz, f_162hz, a162,    "162 Hz (défaut)"),
+    (xbruit, f_bruit, a_bruit, "Bruit"),
+    (xtot,   f_tot,   a_tot,   "Signal complet"),
+]
+n = int(0.1 * fs)   # 0,1 seconde
+
+for ligne, (x, freqs, amp, titre) in enumerate(signaux):
+    # --- Colonne 0 : temporel ---
+    axes[ligne, 0].plot(t[:n], x[:n], color="steelblue", lw=0.8)
+    axes[ligne, 0].set_title(f"{titre} — signal temporel", loc="left")
+    axes[ligne, 0].set_ylabel("Amplitude")
+    axes[ligne, 0].grid(alpha=0.3)
+
+    # --- Colonne 1 : spectre, zoomé sur 0–300 Hz ---
+    axes[ligne, 1].plot(freqs, amp, color="crimson", lw=0.8)
+    axes[ligne, 1].set_xlim(0, 300)
+    axes[ligne, 1].set_title(f"{titre} — spectre", loc="left")
+    axes[ligne, 1].grid(alpha=0.3)
+
+axes[-1, 0].set_xlabel("Temps (s)")
+axes[-1, 1].set_xlabel("Fréquence (Hz)")
+plt.tight_layout(); plt.show()
+
+```
+
+> L'algorithme **FFT** (Fast Fourier Transform) calcule la version numérique du signal échantillonné, cependant il comporte **deux contraintes** : 
+
+- **Limite haute (théorème de Nyquist-Shannon)** : un signal échantillonné à fs ne peut représenter que des fréquences jusqu'à fs/2. Toute composante au-dessus de cette limite subit le repliement de spectre (aliasing). Pour un signal échantillonné à 12 kHz, toute fréquence au-dessus de 6 kHz :
+    - N'existe pas dans le spectre : l'information est perdue ;
+    - Elle apparaît repliée, à une fausse fréquence, plus basse.
+Conclusion : **le repliement masque les hautes fréquences et pollue les basses fréquences** (de fausses raies se mélangent aux vraies).
+Illustration du repliement de spectre :
+
+```{python}
+#  fig-cap: "Le repliement (aliasing) à 12 kHz : une résonance réelle à 11,6 kHz, au-dessus de Nyquist (6 kHz), est perçue comme une sinusoïde de 400 Hz (phase inversée)."
+
+# Cas du projet : fs = 12 kHz -> Nyquist = 6 kHz
+FS_DEMO = 12_000
+F_VRAIE = 11_600                 # résonance réelle, au-dessus de Nyquist
+F_ALIAS = FS_DEMO - F_VRAIE     # 400 Hz : là où elle se replie
+
+# Temporel : 10 ms (indices entiers, pas d'erreur flottante)
+n_ech = np.arange(int(0.01 * FS_DEMO))
+points = np.sin(2 * np.pi * F_VRAIE * n_ech / FS_DEMO)
+
+# FFT : la même sinusoïde observée 2 s (raie fine)
+n_fft = np.arange(int(2.0 * FS_DEMO))
+f_fft, a_fft = spectre_fft(np.sin(2 * np.pi * F_VRAIE * n_fft / FS_DEMO), FS_DEMO)
+
+t_cont = np.arange(0, 0.01, 1 / 1_000_000)    # courbe continue (dense)
+
+fig, axes = plt.subplots(4, 1, figsize=(12, 12.5))
+
+# 1. Le signal réel (continu) avec les points échantillonnés transparents
+axes[0].plot(t_cont * 1000, np.sin(2 * np.pi * F_VRAIE * t_cont),
+             color="crimson", lw=0.8, label="Signal réel (continu)")
+axes[0].plot(n_ech / FS_DEMO * 1000, points, "o", ms=4, color="black",
+             alpha=0.35, label="Points échantillonnés (fs = 12 kHz)")
+axes[0].set_title(f"1. Le signal réel : une résonance à {F_VRAIE/1000:.1f} kHz", loc="left")
+axes[0].set_ylabel("Amplitude")
+axes[0].set_xlabel("Temps (ms)")
+axes[0].legend(fontsize=9, loc="upper right")
+
+# 2. Ce qu'on mesure : les points échantillonnés, seuls
+axes[1].plot(n_ech / FS_DEMO * 1000, points, "o", ms=4, color="crimson")
+axes[1].set_title("2. Ce qu'on mesure : fs = 12 kHz "
+                  "(Nyquist = 6 kHz < 11,6 kHz : trop lent !)", loc="left")
+axes[1].set_ylabel("Amplitude")
+axes[1].set_xlabel("Temps (ms)")
+
+# 3. Ce que croit l'analyste : l'alias. Attention : une fréquence entre
+#    fs/2 et fs se replie AVEC INVERSION DE PHASE -> on trace -sin.
+#    (Vérifié : écart points/courbe ~1e-13)
+axes[2].plot(n_ech / FS_DEMO * 1000, points, "o", ms=5, color="crimson",
+             label="Points mesurés")
+axes[2].plot(t_cont * 1000, -np.sin(2 * np.pi * F_ALIAS * t_cont),
+             color="steelblue", lw=2,
+             label=f"Sinusoïde perçue : {F_ALIAS:.0f} Hz (repliée, phase inversée)")
+axes[2].set_title(f"3. Ce que croit l'analyste : une sinusoïde de {F_ALIAS:.0f} Hz "
+                  "(repliement : fs − f = 12 000 − 11 600)", loc="left")
+axes[2].set_ylabel("Amplitude")
+axes[2].set_xlabel("Temps (ms)")
+axes[2].legend(fontsize=9, loc="upper right")
+
+# 4. La même illusion dans le spectre : la fausse raie, dans la bande observable
+ax = axes[3]
+ax.plot(f_fft / 1000, a_fft, lw=1.2, color="steelblue", label="FFT du signal mesuré")
+ax.axvspan(0, FS_DEMO / 2000, color="lightgreen", alpha=0.25,
+           label="Bande observable (0 – Nyquist = 6 kHz)")
+ax.axvline(F_ALIAS / 1000, color="steelblue", ls="--", lw=1.8,
+           label=f"Raie PERÇUE : {F_ALIAS/1000:.1f} kHz (fausse)")
+ax.axvline(F_VRAIE / 1000, color="crimson", ls="--", lw=1.8,
+           label=f"Vraie raie : {F_VRAIE/1000:.1f} kHz (hors bande)")
+ax.annotate("le repliement déplace\nla vraie raie ICI",
+            xy=(F_ALIAS / 1000, a_fft.max() * 0.75),
+            xytext=(2.5, a_fft.max() * 0.9), fontsize=10, ha="left",
+            arrowprops=dict(arrowstyle="->", color="black"),
+            bbox=dict(boxstyle="round", fc="lightyellow", ec="orange"))
+ax.annotate("vraie fréquence : invisible\n(hors de la bande observable)",
+            xy=(F_VRAIE / 1000, a_fft.max() * 0.5),
+            xytext=(6.5, a_fft.max() * 0.75), fontsize=10, ha="left",
+            arrowprops=dict(arrowstyle="->", color="black"),
+            bbox=dict(boxstyle="round", fc="mistyrose", ec="crimson"))
+ax.set_xlim(0, 12)
+ax.set_title("4. FFT vue par l'analyste : une raie à 0,4 kHz — "
+             "la vraie (11,6 kHz) est hors bande", loc="left")
+ax.set_xlabel("Fréquence (kHz)")
+ax.set_ylabel("Amplitude")
+ax.legend(fontsize=8, loc="upper right")
+
+for ax in axes:
+    ax.grid(alpha=0.3)
+plt.tight_layout(); plt.show()
+```
+
+
+- **Limite basse (résolution)** : la FFT découpe le spectre en cases espacées de 1/T, T étant la durée analysée. Avec 1 seconde d'observation, la résolution est de 1 Hz : c'est la largeur d'une raie. Deux fréquences plus proches tombent dans la même case : indiscernables, même si elles existent bel et bien dans le signal.
+illustration de la résolution spectrale :
+
+```{python}
+#  fig-cap: "La résolution spectrale 1/T : deux sinusoïdes à 30 et 33 Hz ne peuvent être distinguées que si le signal est observé assez longtemps — la flèche verte, calée sur la raie de 30 Hz, mesure exactement une case de la grille FFT (1/T)."
+
+FS_DEMO = 12_000
+F1, F2 = 30, 33          # deux raies séparées de seulement 3 Hz
+
+t_court = np.arange(0, 0.1, 1 / FS_DEMO)    # observation de 0,1 s
+t_long  = np.arange(0, 1.0, 1 / FS_DEMO)    # observation de 1 s
+x_court = np.sin(2 * np.pi * F1 * t_court) + 0.8 * np.sin(2 * np.pi * F2 * t_court)
+x_long  = np.sin(2 * np.pi * F1 * t_long)  + 0.8 * np.sin(2 * np.pi * F2 * t_long)
+
+f_c, a_c = spectre_fft(x_court, FS_DEMO)
+f_l, a_l = spectre_fft(x_long, FS_DEMO)
+
+def tracer_resolution(ax, amp, resolution):
+    """Flèche de largeur EXACTEMENT égale à la résolution (1/T Hz),
+    calée sur la raie 30 Hz (de F1 à F1 + résolution), texte centré."""
+    y = amp.max() * 0.55
+    ax.annotate("", xy=(F1 + resolution, y), xytext=(F1, y),
+                arrowprops=dict(arrowstyle="<->", color="darkgreen",
+                                lw=2.5, mutation_scale=14))
+    ax.text(F1 + resolution / 2, y * 1.08,
+            f"résolution = {resolution:.0f} Hz",
+            ha="center", va="bottom", fontsize=11, color="darkgreen",
+            fontweight="bold")
+
+fig, axes = plt.subplots(3, 1, figsize=(12, 9))
+
+# 1. Le signal temporel : les deux sinusoïdes, indiscernables à l'œil
+axes[0].plot(t_court * 1000, x_court, lw=0.8, color="crimson")
+axes[0].set_title("1. Le signal : deux sinusoïdes (30 + 33 Hz) "
+                  "— indiscernables dans le temporel", loc="left")
+axes[0].set_xlabel("Temps (ms)")
+axes[0].set_ylabel("Amplitude")
+axes[0].grid(alpha=0.3)
+
+# 2. Observation courte (T = 0,1 s) : résolution 10 Hz -> raies confondues
+axes[1].plot(f_c, a_c, lw=1.2, color="crimson", label="Spectre observé sur 0,1 s")
+axes[1].axvline(F1, color="purple", ls="--", lw=1, label="vraie raie 30 Hz")
+axes[1].axvline(F2, color="blue",   ls="--", lw=1, label="vraie raie 33 Hz")
+axes[1].set_xlim(18, 46)               # marge gauche : pic visible en entier
+axes[1].set_ylim(0, a_c.max() * 1.2)
+axes[1].set_xticks(np.arange(18, 47, 2))
+tracer_resolution(axes[1], a_c, resolution=10)   # flèche : 30 -> 40 Hz
+axes[1].set_title("2. Observé 0,1 s : résolution 1/T = 10 Hz "
+                  "→ UNE seule raie : les deux se confondent", loc="left")
+axes[1].set_xlabel("Fréquence (Hz)")
+axes[1].set_ylabel("Amplitude")
+axes[1].legend(fontsize=9, loc="upper right")
+axes[1].grid(alpha=0.3)
+
+# 3. Observation longue (T = 1 s) : résolution 1 Hz -> raies séparées
+axes[2].plot(f_l, a_l, lw=1.2, color="crimson", label="Spectre observé sur 1 s")
+axes[2].axvline(F1, color="purple", ls="--", lw=1, label="vraie raie 30 Hz")
+axes[2].axvline(F2, color="blue",   ls="--", lw=1, label="vraie raie 33 Hz")
+axes[2].set_xlim(18, 46)               # même fenêtre que le panneau 2
+axes[2].set_ylim(0, a_l.max() * 1.2)
+axes[2].set_xticks(np.arange(18, 47, 2))
+tracer_resolution(axes[2], a_l, resolution=1)    # flèche : 30 -> 31 Hz
+axes[2].set_title("3. Observé 1 s : résolution 1/T = 1 Hz "
+                  "→ DEUX raies distinctes", loc="left")
+axes[2].set_xlabel("Fréquence (Hz)")
+axes[2].set_ylabel("Amplitude")
+axes[2].legend(fontsize=9, loc="upper right")
+axes[2].grid(alpha=0.3)
+
+plt.tight_layout(); plt.show()
+```
+
+**Conclusion :**
+
+- **La fréquence d'échantillonnage** doit être **au moins deux fois supérieure** à la fréquence maximale du signal — sinon les fréquences au-delà de fs/2 ne disparaissent pas silencieusement : elles se replient et polluent la bande utile avec de fausses raies
+
+- **La durée d'observation** doit être assez longue pour distinguer des signaux à basse fréquence, sinon les raies fusionnent, et l'information est moins précise.
+
+
+
+## Etude de cas : défaut de bague intérieure
+
+
 Le cas étudié à titre d'exemple concerne un **défaut de bague intérieure de 0,007"** (0,178 mm) sur le roulement **côté moteur (Drive End)** à une charge de **0 HP (≈1797 tr/min)**.
 Nous utiliserons les données des accéléromètres **côté moteur (Drive End)** et **côté ventilateur (Fan End)**
 
