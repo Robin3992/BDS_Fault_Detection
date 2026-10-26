@@ -4,7 +4,7 @@ subtitle: "Exploration du jeu de données CWRU Bearing Data Center"
 author:
   - name: "Blaise Boutolleau"
   - name: "Mourad Mellal"
-  - name: "Robin Grivet "
+  - name: "Robin Grivet"
 date: today
 lang: fr
 crossref:
@@ -728,7 +728,7 @@ Conclusion : **le repliement masque les hautes fréquences et pollue les basses 
 Illustration du repliement de spectre :
 
 ```{python}
-#  fig-cap: "Le repliement (aliasing) à 12 kHz : une résonance réelle à 11,6 kHz, au-dessus de Nyquist (6 kHz), est perçue comme une sinusoïde de 400 Hz (phase inversée)."
+#| fig-cap: "Le repliement (aliasing) à 12 kHz."
 
 # Cas du projet : fs = 12 kHz -> Nyquist = 6 kHz
 FS_DEMO = 12_000
@@ -814,7 +814,7 @@ plt.tight_layout(); plt.show()
 illustration de la résolution spectrale :
 
 ```{python}
-#  fig-cap: "La résolution spectrale 1/T : deux sinusoïdes à 30 et 33 Hz ne peuvent être distinguées que si le signal est observé assez longtemps — la flèche verte, calée sur la raie de 30 Hz, mesure exactement une case de la grille FFT (1/T)."
+#| fig-cap: "La résolution spectrale 1/T"
 
 FS_DEMO = 12_000
 F1, F2 = 30, 33          # deux raies séparées de seulement 3 Hz
@@ -896,10 +896,7 @@ plt.tight_layout(); plt.show()
 Le cas étudié à titre d'exemple concerne un **défaut de bague intérieure de 0,007"** (0,178 mm) sur le roulement **côté moteur (Drive End)** à une charge de **0 HP (≈1797 tr/min)**.
 Nous utiliserons les données des accéléromètres **côté moteur (Drive End)** et **côté ventilateur (Fan End)**
 
-Pour une meilleure lisibilité, nous avons attribué un style fixe à chaque données.
-- **Chaque état du roulement** a une couleur (vert = sain, rouge = défaut) 
-- **Chaque roulement** a un style de trait (plein = Drive End, tirets = Fan End)
-On peut ainsi identifier état et roulement sur n'importe quel graphique sans lire la légende.
+On vérifie la cohérence des signaux chargés : nombre de points, durée (calculée avec la fréquence annoncée par le catalogue), valeurs manquantes et plage d'amplitude.
 
 ```{python}
 # --- Fichiers étudiés : baseline saine et défaut bague intérieure, 0 HP ---
@@ -913,6 +910,7 @@ STYLES = {
     "condition": {"Sain": "#149C07", "Défaut": "#C82909"},
     "canal":     {"DE": "-",        "FE": "--"},
 }
+
 STYLES_RAIES = {  # fréquences caractéristiques
     "BPFI": ("purple", "-"),
     "BPFO": ("blue",   "--"),
@@ -921,14 +919,9 @@ STYLES_RAIES = {  # fréquences caractéristiques
 }
 ```
 
-## Présentations des signaux et des fréquences caractéristiques
-
-### Signaux
-
-On vérifie la cohérence des signaux chargés : nombre de points, durée (calculée avec la fréquence annoncée par le catalogue), valeurs manquantes et plage d'amplitude.
 
 ```{python}
-#  tbl-cap: "Résumé des signaux, durées calculées avec le fs annoncé par le catalogue."
+#|  tbl-cap: "Résumé des signaux, durées calculées avec le fs annoncé par le catalogue."
 
 SIGNAUX = {  # nom: (signaux, canal, condition)
     "Sain — moteur (DE)":        (sain,   "DE", "Sain"),
@@ -949,14 +942,38 @@ resume = pd.DataFrame([
 resume
 ```
 
-Aucune valeur manquante. A noter que le sain a environ deux fois plus de points que le défaut (environ 244000 contre 121000).
+Aucune valeur manquante. A noter que le signal sain a environ deux fois plus de points que les défauts :
 
-::: {.content-hidden when-format="pdf"}
-Les signaux devraient avoir la même fréquence d'échantillonnage selon les indications du site CWRU (12 kHz), cependant on constate un rapport de 2 sur le nombre de point entre le sain et le défaut.
-On soupçonne ici une fréquence d'échantillonage à **24KHz** sur le sain, ce qui serait plus cohérent.
-Gardons **12KHz** comme indiqué pour le moment, mais ce point devra néanmoins être confirmé sur le signal lui-même dans la suite du projet.
-La fréquence d'échantillonnage n'est pas stockée dans les fichiers `.mat`, et notre catalogue repose sur les données textuelles du site CWRU. Si une incohérence apparaît lors des analyses spectrales, une des pistes pourrait être un problème de fréquence d'échantillonnage.
-:::
+On vérifie la fréquence d'échantillonnage du signal sain : le catalogue indique 12 kHz mais il est probable que le signal sain ait été échantillonné à **24 kHz**.
+
+Le site CWRU indique une fréquence de rotation moteur de 1797 tr/min, soit environ 30 Hz. On peut vérifier que cette fréquence est bien présente dans le signal sain, en supposant différentes fréquences d'échantillonnage (12 kHz, 24 kHz et 48 kHz) :
+
+```{python}
+#|  tbl-cap: "Contrôle du fs sur base de fréquence de rotation moteur."
+def spectre_fft(x, fs):
+    """Spectre d'amplitude : renvoie (fréquences, amplitudes)."""
+    n = len(x)
+    freqs = fftfreq(n, d=1 / fs)[: n // 2]
+    # amp = np.abs(fft(x))[: n // 2] * 2 / n
+    # ajout de "- np.mean(x)" pour supprimer la composante continue du signal
+    amp = np.abs(fft(x - np.mean(x)))[: n // 2] * 2 / n
+    return freqs, amp
+
+x = sain["DE"]  # signal du capteur DE (Drive End)
+fig, axes = plt.subplots(3, 1, figsize=(12, 9))
+for ax, fs in zip(axes, [48000, 24000, 12000]):
+    f, a = spectre_fft(x, fs)
+    ax.plot(f, a)
+    ax.set_xlim(0, 150)
+    ax.set_ylim(0, 0.015)
+    ax.axvline(1797/60, color="red", ls="--", label="rotation moteur attendue ≈ 30 Hz")
+    ax.set_title(f"Signal sain, en supposant fs = {fs} Hz")
+    ax.legend()
+axes[1].set_xlabel("Fréquence (Hz)")
+plt.tight_layout(); plt.show()
+```
+
+Seul la configuration à 12 KHz montre un pic sur la fréquence de rotation attendue (≈30 Hz), on valide la fréquence d'échantillonnage à 12 KHz pour le signal sain.
 
 ### Fréquences caractéristiques des défauts
 
@@ -974,21 +991,28 @@ COEFF_FREQ = {  # coefficients × fréquence de rotation, source CWRU
     "DE": {"BPFI": 5.4152, "BPFO": 3.5848, "BSF": 4.7135, "FTF": 0.39828},
     "FE": {"BPFI": 4.9469, "BPFO": 3.0530, "BSF": 3.9874, "FTF": 0.3817},
 }
-
-RPM = defaut["rpm"]  # vitesse du fichier si présente, sinon nominale du catalogue
+RPM = defaut["rpm"] # vitesse du fichier si présente, sinon nominale du catalogue
 
 def freqs_caracteristiques(roulement, rpm=RPM):
     """Fréquences caractéristiques (Hz) du roulement 'DE' ou 'FE'."""
     f_rot = rpm / 60
     return {nom: coef * f_rot for nom, coef in COEFF_FREQ[roulement].items()}
 
-pd.DataFrame({roulement: freqs_caracteristiques(roulement)
-              for roulement in ("DE", "FE")}).round(1).astype(str) + " Hz"
+pd.DataFrame({
+    "vitesse de rotation": [f"{RPM:.0f} tr/min"] * len(COEFF_FREQ["DE"]),
+    "coefficient": pd.Series(COEFF_FREQ["DE"]),
+    "f. caractéristique (DE)": pd.Series(freqs_caracteristiques("DE")).round(2).astype(str) + " Hz",
+}).round(4)
 ```
+
+
+On note que **les raies caractéristiques sont directement liées à la vitesse de rotation du moteur** : si la vitesse varie, les raies se déplacent proportionnellement. Il est donc indispensable de connaître la vitesse de rotation exacte pour identifier correctement les raies.
+
 
 ## Signaux temporels brutes
 
-On visualise 0,1 seconde de signal, **en secondes** plutôt qu'en points, à échelle d'amplitude commune. Le défaut étant côté moteur, c'est le canal DE qui porte la signature ; le canal FE sert de comparaison.
+On visualise 0,1 seconde de signal, à échelle d'amplitude commune, et on trace les raies caractéristiques correspondant à chaque défaut.
+
 
 ```{python}
 #| fig-cap: "0,1 seconde de signal ; vert = sain, rouge = défaut ; trait plein = Drive End, tirets = Fan End."
@@ -1000,7 +1024,7 @@ def tracer_temps(x, fs, ax, condition, canal, titre):
             ls=STYLES["canal"][canal], lw=0.7)
     ax.set_title(titre, loc="left")
     ax.set_xlabel("Temps (s)")
-    ax.set_ylabel("Accélération (g)")
+    ax.set_ylabel("Amplitude")
     ax.grid(alpha=0.3)
 
 fig, axes = plt.subplots(2, 2, figsize=(12, 5), sharex=True, sharey=True)
@@ -1044,15 +1068,6 @@ Ainsi, on voit clairement quelles fréquences sont excitées, et celles qui ne l
 
 ```{python}
 #| fig-cap: "Spectres d'amplitude FFT : le défaut ajoute de l'énergie haute fréquence."
-
-def spectre_fft(x, fs):
-    """Spectre d'amplitude : renvoie (fréquences, amplitudes)."""
-    n = len(x)
-    freqs = fftfreq(n, d=1 / fs)[: n // 2]
-    # amp = np.abs(fft(x))[: n // 2] * 2 / n
-    # ajout de "- np.mean(x)" pour supprimer la composante continue du signal
-    amp = np.abs(fft(x - np.mean(x)))[: n // 2] * 2 / n
-    return freqs, amp
 
 def tracer_fft(ax, x, fs, condition, canal, titre,
                roulement=None, x_max=None):
