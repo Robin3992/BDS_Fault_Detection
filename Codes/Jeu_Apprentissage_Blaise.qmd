@@ -1,0 +1,224 @@
+Introduction Ce document présente: \* la création du jeu d'apprentissage. \* l'apprentissage automatique (AutoML) pour la dectection de défauts avec RMS et Kurtosis
+
+```{python}
+# Votre code Python ici
+import pandas as pd
+import numpy as np
+
+
+table_indicateurs_failure = pd.read_csv(r"C:\Users\ReMarkt\Documents\0_PROJET_SCIENTIST\GitHub\BDS_Fault_Detection\data\features\table_indicateurs.csv")
+
+display(table_indicateurs_failure.head())
+
+
+# Si df['Classe'] est égal à "sains", on met 0, sinon 1
+table_indicateurs_failure["Failure"] = np.where(table_indicateurs_failure["classe"] == "Sain", 0, 1)
+
+display(table_indicateurs_failure.head())
+
+# Séparation du fichier sans défaut billes et avec défaut billes
+# On ne garde que les lignes où le défaut est différent de "B"
+table_indicateurs_failure_sans_B = table_indicateurs_failure[table_indicateurs_failure["defaut"] != "B"]
+
+print("comptage valeurs defaut de table_indicateurs_failure_sans_B :")
+ 
+display(table_indicateurs_failure_sans_B["defaut"].value_counts())
+
+# On supprime les colonnes inutiles pour l'apprentissage
+table_indicateurs_failure_sans_B = table_indicateurs_failure_sans_B.drop(["fichier", "fenetre", "rpm", "numero",	"source",	"fs",	"defaut", "position_OR", "diametre_mils",	"charge_hp", "rpm_nominal",	"classe"
+], axis = 1)
+
+display(table_indicateurs_failure_sans_B.head())
+
+display(table_indicateurs_failure_sans_B.describe())
+
+display(table_indicateurs_failure_sans_B["Failure"].value_counts())
+
+
+
+# EQUILIBRAGE DES CLASSES "Failure" POUR L'APPRENTISSAGE
+
+# 1. Identifier les indices des lignes qui respectent la condition
+indices_failure = table_indicateurs_failure_sans_B[
+    table_indicateurs_failure_sans_B["Failure"] == 1
+].index
+
+# 2. Échantillonner au hasard (et sans remise) exactement 5/12ème de ces indices
+# (Le paramètre random_state assure que la suppression reste identique à chaque exécution)
+indices_a_supprimer = indices_failure.to_series().sample(
+    frac=5 / 12, random_state=42
+)
+
+# 3. Supprimer ces lignes du DataFrame d'origine
+table_indicateurs_failure_sans_B = table_indicateurs_failure_sans_B.drop(
+    indices_a_supprimer
+)
+
+display(table_indicateurs_failure_sans_B["Failure"].value_counts())
+
+
+
+# MELANGER LES DONNEES POUR L'APPRENTISSAGE
+
+# 2. Mélanger les lignes de manière aléatoire
+# - frac=1 : on garde 100% des données (toutes les lignes)
+# - random_state=42 : fixe la "graine" aléatoire pour que le mélange soit reproductible si vous rejouez le code
+table_indicateurs_failure_sans_B_melange = table_indicateurs_failure_sans_B.sample(frac=1, random_state=42).reset_index(drop=True)
+
+display(table_indicateurs_failure_sans_B_melange.head(8))
+
+
+
+# 3. Sauvegarder le nouveau fichier mélangé pour l'AutoML
+table_indicateurs_failure_sans_B_melange.to_csv('table_indicateurs_failure_sans_B_melange.csv', index=False)
+
+print("Le fichier a été mélangé avec succès et sauvegardé sous 'table_indicateurs_failure_sans_B_melange.csv' !")
+
+
+X_sans_B = table_indicateurs_failure_sans_B_melange.drop("Failure", axis=1)
+print ("X_sans_B :")
+display(X_sans_B.head())
+
+y_sans_B = table_indicateurs_failure_sans_B_melange["Failure"]
+print ("y_sans_B :")
+display(y_sans_B.head())
+
+
+```
+
+Modèle d'apprentissage automatique (AutoML)
+
+```{python}
+
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import ConfusionMatrixDisplay
+import matplotlib.pyplot as plt
+
+
+# Séparation des données en ensembles d'entraînement et de test
+
+X_train, X_test, y_train, y_test = train_test_split (X_sans_B, y_sans_B, test_size =0.2, random_state=42)
+
+
+
+
+# Création et configuration du classificateur Random Forest
+
+rf = RandomForestClassifier(n_estimators=4, max_depth=4, random_state=42)
+rf.fit(X_train, y_train)
+
+y_pred = rf.predict(X_test)
+
+
+
+accuracy = np.round(accuracy_score(y_test, y_pred), 3)
+print(f"Précision du modèle : {accuracy}")
+
+
+
+# Affichage de la matrice de confusion
+cm = confusion_matrix(y_test, y_pred)
+# Affichage
+disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+disp.plot(cmap="Blues")
+
+plt.title(f"Matrice de confusion  & Accuracy  : {accuracy}")
+plt.show()
+
+# INTERPRETATION DES RESULTATS
+
+# 1. Récupérer l'importance calculée par le modèle
+importances = rf.feature_importances_
+
+# 2. Créer un DataFrame propre pour la lecture
+noms_variables = ["RMS", "Pic", "Crete", "Kurtosis"]
+df_importance = pd.DataFrame(
+    {"Indicateur": noms_variables, "Importance (%)": importances * 100}
+)
+
+# 3. Trier par ordre d'importance
+df_importance = df_importance.sort_values(
+    by="Importance (%)", ascending=False
+)
+print(df_importance.to_string(index=False))
+
+
+
+from sklearn.tree import export_text
+
+# Afficher les règles pour chacun des 4 arbres de la forêt
+for i, arbre in enumerate(rf.estimators_):
+    print(f"\n--- Structure de l'Arbre de décision n°{i+1} ---")
+    regles = export_text(arbre, feature_names=noms_variables)
+    print(regles)
+
+```
+
+
+```{python}
+
+from sklearn.linear_model import LogisticRegression
+
+
+# Séparation des données en ensembles d'entraînement et de test
+
+X_train, X_test, y_train, y_test = train_test_split (X_sans_B, y_sans_B, test_size =0.2, random_state=42)
+
+
+
+
+
+# Création et configuration du classificateur Logistic Regression
+
+lr = LogisticRegression(random_state=42)
+lr.fit(X_train, y_train)
+
+y_pred = lr.predict(X_test)
+
+
+
+accuracy = np.round(accuracy_score(y_test, y_pred), 3)
+print(f"Précision du modèle : {accuracy}")
+
+
+
+# Affichage de la matrice de confusion
+cm = confusion_matrix(y_test, y_pred)
+# Affichage
+disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+disp.plot(cmap="Blues")
+
+plt.title(f"Matrice de confusion  & Accuracy  : {accuracy}")
+plt.show()
+
+# INTERPRETATION DES RESULTATS
+
+# 1. Récupérer l'importance calculée par le modèle
+coefficients = lr.coef_[0]
+
+# 2. Créer un DataFrame propre pour la lecture
+noms_variables = ["RMS", "Pic", "Crete", "Kurtosis"]
+df_coefficients = pd.DataFrame(
+    {"Indicateur": noms_variables, "Coefficient": coefficients }
+)
+
+# 3. Trier par ordre d'importance
+df_coefficients = df_coefficients.sort_values(
+    by="Coefficient", ascending=False
+)
+print(df_coefficients.to_string(index=False))
+
+
+
+
+
+
+
+
+```
+
+
+
