@@ -88,13 +88,14 @@ Les défauts de surface ont étés par électro érosion en différents points d
 
 ·       Bille
 
-·       Bague extérieure « fixe » en trois positions ( 12 :00, 3 :00 et 6 :00)
-et avec des profondeurs différentes :
+·       Bague extérieure « fixe » en trois positions ( 12 :00, 3 :00 et 6 :00) et avec des profondeurs différentes :
 
-    ·   0,007''   (= ≈0, 178 mm)   (1''  équivalent ≈25,4 mm)
-    ·   0,014''   (= ≈0, 356 mm)
-    ·   0,021''   (= ≈0, 533 mm)
-    ·   0,028''   (= ≈0, 711 mm)
+```         
+·   0,007''   (= ≈0, 178 mm)   (1''  équivalent ≈25,4 mm)
+·   0,014''   (= ≈0, 356 mm)
+·   0,021''   (= ≈0, 533 mm)
+·   0,028''   (= ≈0, 711 mm)
+```
 
 Représentation des 5 points de défauts :
 
@@ -112,23 +113,9 @@ Données publiques issues de CWRU
 
 [Download a Data File \| Case School of Engineering](https://engineering.case.edu/bearingdatacenter/download-data-file)
 
-Les données proviennent des quatre pages de téléchargement du *Bearing Data
-Center* de la Case Western Reserve University : enregistrements de référence
-sur roulement sain, défauts sur le roulement côté entraînement échantillonnés
-à 12 kHz et à 48 kHz, et défauts sur le roulement côté ventilateur à 12 kHz.
-L'ensemble de ces fichiers a été rassemblé dans un catalogue unique, où chaque
-enregistrement reçoit un nom lisible résumant ses caractéristiques : source,
-localisation et diamètre du défaut, position éventuelle sur la bague
-extérieure et charge du moteur (par exemple `12kDE_IR007_L0` pour un défaut de
-bague intérieure de 0,007", enregistré à 12 kHz côté entraînement à 0 HP).
+Les données proviennent des quatre pages de téléchargement du *Bearing Data Center* de la Case Western Reserve University : enregistrements de référence sur roulement sain, défauts sur le roulement côté entraînement échantillonnés à 12 kHz et à 48 kHz, et défauts sur le roulement côté ventilateur à 12 kHz. L'ensemble de ces fichiers a été rassemblé dans un catalogue unique, où chaque enregistrement reçoit un nom lisible résumant ses caractéristiques : source, localisation et diamètre du défaut, position éventuelle sur la bague extérieure et charge du moteur (par exemple `12kDE_IR007_L0` pour un défaut de bague intérieure de 0,007", enregistré à 12 kHz côté entraînement à 0 HP).
 
-Le catalogue compte 161 fichiers, répartis comme indiqué
-dans le @tbl-catalogue. Les défauts de bague extérieure sont plus nombreux,
-car ils ont été étudiés à trois positions par rapport à la zone de charge
-(3 h, 6 h et 12 h). Le plan n'est cependant pas complet : certaines
-combinaisons de diamètre, de position et de charge n'ont pas été enregistrées,
-en particulier pour le roulement côté ventilateur, et le diamètre de 0,028"
-n'existe qu'à 12 kHz côté entraînement, pour la bague intérieure et la bille.
+Le catalogue compte 161 fichiers, répartis comme indiqué dans le @tbl-catalogue. Les défauts de bague extérieure sont plus nombreux, car ils ont été étudiés à trois positions par rapport à la zone de charge (3 h, 6 h et 12 h). Le plan n'est cependant pas complet : certaines combinaisons de diamètre, de position et de charge n'ont pas été enregistrées, en particulier pour le roulement côté ventilateur, et le diamètre de 0,028" n'existe qu'à 12 kHz côté entraînement, pour la bague intérieure et la bille.
 
 ```{python}
 #| tbl-cap: "Nombre de fichiers du catalogue CWRU par source et type de défaut."
@@ -203,17 +190,13 @@ Markdown(pd.DataFrame(lignes).to_markdown(
     index=False, colalign=("left", "right", "right", "right", "left")))
 ```
 
-**Unité d'amplitudes des signaux** : 
-Le site CWRU ne mentionne pas l'unité de mesure des signaux.
-Nous utiliserons l'unité g (accélération de la pesanteur) pour les signaux, car c'est l'unité usuelle en surveillance vibratoire (normes ISO 20816). Ce choix de g repose sur l'ordre de grandeur des signaux (cf indicateurs RMS) et sur la convention de la littérature utilisant ce jeu de données.
+**Unité d'amplitudes des signaux** : Le site CWRU ne mentionne pas l'unité de mesure des signaux. Nous utiliserons l'unité g (accélération de la pesanteur) pour les signaux, car c'est l'unité usuelle en surveillance vibratoire (normes ISO 20816). Ce choix de g repose sur l'ordre de grandeur des signaux (cf indicateurs RMS) et sur la convention de la littérature utilisant ce jeu de données.
 
 # Analyse exploratoire : indicateurs
 
 ## Objectif
 
-Cette section décrit le comportement de quatre indicateurs statistiques
-(RMS, valeur crête, facteur de crête, kurtosis) selon l'état du roulement,
-afin de :
+Cette section décrit le comportement de quatre indicateurs statistiques (RMS, valeur crête, facteur de crête, kurtosis) selon l'état du roulement, afin de :
 
 - repérer les indicateurs qui distinguent un roulement sain d'un roulement défectueux ;
 - voir s'ils distinguent aussi les types de défauts entre eux ;
@@ -221,18 +204,14 @@ afin de :
 
 ## Sélection des fichiers
 
-L'analyse porte sur la configuration de référence de la littérature :
-**40 fichiers** échantillonnés à 12 kHz côté entraînement, formant un plan
-factoriel complet et équilibré :
+L'analyse porte sur la configuration de référence de la littérature : **40 fichiers** échantillonnés à 12 kHz côté entraînement, formant un plan factoriel complet et équilibré :
 
 - **localisation du défaut** : bague intérieure (IR), bille (B), bague extérieure à 6 h (OR) ;
 - **diamètre** : 0,007", 0,014", 0,021" ;
 - **charge** : 0, 1, 2, 3 HP ;
 - plus les 4 enregistrements sains, soit **10 classes**.
 
-Sont écartés : le diamètre 0,028" (pas de défaut de bague extérieure, autre
-fabricant), les positions 3 h et 12 h (incomplètes), les données à 48 kHz et
-côté ventilateur (autres conditions d'acquisition).
+Sont écartés : le diamètre 0,028" (pas de défaut de bague extérieure, autre fabricant), les positions 3 h et 12 h (incomplètes), les données à 48 kHz et côté ventilateur (autres conditions d'acquisition).
 
 ```{python}
 #| label: selection
@@ -252,16 +231,14 @@ selection.groupby(["defaut", "diametre_mils"]).size().unstack(fill_value=0)
 
 ## Construction de la table des indicateurs
 
-Chaque signal (capteur côté entraînement) est découpé en **fenêtres de 0,2 s**
-sans recouvrement, soit environ 6 tours d'arbre par fenêtre. Chaque fenêtre
-devient une observation, sur laquelle on calcule les quatre indicateurs :
+Chaque signal (capteur côté entraînement) est découpé en **fenêtres de 0,2 s** sans recouvrement, soit environ 6 tours d'arbre par fenêtre. Chaque fenêtre devient une observation, sur laquelle on calcule les quatre indicateurs :
 
- | Indicateur | Définition | Ce qu'il mesure |
- |---|---|---|
- | RMS | $\sqrt{\frac{1}{n}\sum x_i^2}$ | Niveau d'énergie global de la vibration |
- | Pic | $\max \lvert x_i \rvert$ | Amplitude maximale atteinte |
- | Facteur de crête | Pic / RMS | Importance des chocs par rapport au niveau moyen |
- | Kurtosis | $\frac{1}{n}\sum (x_i-\bar{x})^4 / \sigma^4$ | Présence de valeurs extrêmes (3 pour une loi normale) |
+| Indicateur | Définition | Ce qu'il mesure |
+|------------------------|------------------------|------------------------|
+| RMS | $\sqrt{\frac{1}{n}\sum x_i^2}$ | Niveau d'énergie global de la vibration |
+| Pic | $\max \lvert x_i \rvert$ | Amplitude maximale atteinte |
+| Facteur de crête | Pic / RMS | Importance des chocs par rapport au niveau moyen |
+| Kurtosis | $\frac{1}{n}\sum (x_i-\bar{x})^4 / \sigma^4$ | Présence de valeurs extrêmes (3 pour une loi normale) |
 
 Les indicateurs temporels classiques en surveillance vibratoire sont :
 
@@ -287,44 +264,32 @@ table.groupby(["classe", "charge_hp"]).size().unstack()
 
 ### Structure de la table des indicateurs
 
-La table obtenue compte `{python} len(table)` lignes et
-`{python} table.shape[1]` colonnes. Chaque **ligne** correspond à une
-**fenêtre de 0,2 s** d'un enregistrement : un même fichier fournit donc
-plusieurs dizaines de lignes (environ 50 pour un fichier de défaut,
-100 à 200 pour un fichier sain, plus long).
+La table obtenue compte `{python} len(table)` lignes et `{python} table.shape[1]` colonnes. Chaque **ligne** correspond à une **fenêtre de 0,2 s** d'un enregistrement : un même fichier fournit donc plusieurs dizaines de lignes (environ 50 pour un fichier de défaut, 100 à 200 pour un fichier sain, plus long).
 
-Les **colonnes** se répartissent en quatre groupes, décrits dans le
-@tbl-dictionnaire.
+Les **colonnes** se répartissent en quatre groupes, décrits dans le @tbl-dictionnaire.
 
- | Groupe | Colonne | Contenu |
- |:--|:--|:--|
- | Identification | `fichier` | Nom lisible du fichier (ex. `12kDE_IR007_L0`) |
- | | `numero` | Numéro du fichier sur le site CWRU |
- | | `fenetre` | Rang de la fenêtre dans le fichier (0, 1, 2…) |
- | Conditions d'essai | `source` | Page d'origine (`Normal` ou `12kDE`) |
- | | `fs` | Fréquence d'échantillonnage (Hz) |
- | | `charge_hp` | Charge du moteur (0 à 3 HP) |
- | | `rpm_nominal` | Vitesse annoncée par le site (tr/min) |
- | | `rpm` | Vitesse mesurée dans le fichier (tr/min) |
- | Étiquettes | `defaut` | Localisation : Sain, IR, B ou OR |
- | | `diametre_mils` | Diamètre du défaut, en millièmes de pouce |
- | | `position_OR` | Position du défaut de bague extérieure (6 h) |
- | | `classe` | Étiquette des 10 classes (ex. `IR007`, `Sain`) |
+| Groupe | Colonne | Contenu |
+|:-----------------------|:-----------------------|:-----------------------|
+| Identification | `fichier` | Nom lisible du fichier (ex. `12kDE_IR007_L0`) |
+|  | `numero` | Numéro du fichier sur le site CWRU |
+|  | `fenetre` | Rang de la fenêtre dans le fichier (0, 1, 2…) |
+| Conditions d'essai | `source` | Page d'origine (`Normal` ou `12kDE`) |
+|  | `fs` | Fréquence d'échantillonnage (Hz) |
+|  | `charge_hp` | Charge du moteur (0 à 3 HP) |
+|  | `rpm_nominal` | Vitesse annoncée par le site (tr/min) |
+|  | `rpm` | Vitesse mesurée dans le fichier (tr/min) |
+| Étiquettes | `defaut` | Localisation : Sain, IR, B ou OR |
+|  | `diametre_mils` | Diamètre du défaut, en millièmes de pouce |
+|  | `position_OR` | Position du défaut de bague extérieure (6 h) |
+|  | `classe` | Étiquette des 10 classes (ex. `IR007`, `Sain`) |
 | Indicateurs | `RMS` | Valeur efficace : énergie de la vibration |
- | | `Pic` | Amplitude maximale en valeur absolue |
- | | `Crete` | Facteur de crête : Pic / RMS |
- | | `Kurtosis` | Aplatissement (3 pour une loi normale) |
+|  | `Pic` | Amplitude maximale en valeur absolue |
+|  | `Crete` | Facteur de crête : Pic / RMS |
+|  | `Kurtosis` | Aplatissement (3 pour une loi normale) |
 
-: Description des colonnes de la table des indicateurs. {#tbl-dictionnaire}
+: Description des colonnes de la table des indicateurs.
 
-Les colonnes d'identification et de conditions d'essai sont recopiées du
-catalogue pour chaque fenêtre : la table est ainsi autonome, et chaque
-observation peut être regroupée par fichier, par charge ou par classe sans
-recourir à une autre source. La colonne `classe` constitue la variable
-à prédire pour la classification ; les quatre indicateurs en sont les
-variables explicatives. La colonne `fichier` servira à séparer les données
-d'apprentissage et de test, afin que les fenêtres d'un même enregistrement
-ne se retrouvent pas des deux côtés.
+Les colonnes d'identification et de conditions d'essai sont recopiées du catalogue pour chaque fenêtre : la table est ainsi autonome, et chaque observation peut être regroupée par fichier, par charge ou par classe sans recourir à une autre source. La colonne `classe` constitue la variable à prédire pour la classification ; les quatre indicateurs en sont les variables explicatives. La colonne `fichier` servira à séparer les données d'apprentissage et de test, afin que les fenêtres d'un même enregistrement ne se retrouvent pas des deux côtés.
 
 Le @tbl-extrait en donne un extrait.
 
@@ -338,6 +303,8 @@ extrait = (table[table["fichier"].isin(["Normal_L0", "12kDE_IR007_L0"])]
            .round(3))
 Markdown(extrait.to_markdown(index=False))
 ```
+
+```{=html}
 <!--
 Ce que fait ce bloc
 La boucle parcourt les 40 fichiers de selection. Pour chacun, elle lit le signal avec charger, puis le découpe en fenêtres de 0,2 s.
@@ -353,6 +320,7 @@ mais pas en fenêtres : la classe « Sain » représente environ 28 % des
 observations. Ce déséquilibre est sans effet sur l'exploration (médianes,
 boxplots), mais devra être pris en compte lors de la modélisation.
 -->
+```
 
 ## Statistiques descriptives
 
@@ -370,22 +338,11 @@ ORDRE = ["Sain", "IR007", "IR014", "IR021", "B007", "B014", "B021",
 table.groupby("classe")[INDICATEURS].agg(["mean", "std"]).round(3).reindex(ORDRE)
 ```
 
-Le RMS distingue en moyenne toutes les classes de défaut du roulement sain
-(0,067) ; les écarts les plus faibles concernent OR014 (0,096) et B021 (0,120).
-Le kurtosis, en revanche, ne détecte pas certains défauts : B007 (2,91) est
-indiscernable du sain (2,90), et OR014 (3,11) et B021 (3,73) restent proches
-de la valeur gaussienne de 3. Les défauts les plus impulsifs sont IR014 et
-OR021 (kurtosis supérieur à 20).
+Le RMS distingue en moyenne toutes les classes de défaut du roulement sain (0,067) ; les écarts les plus faibles concernent OR014 (0,096) et B021 (0,120). Le kurtosis, en revanche, ne détecte pas certains défauts : B007 (2,91) est indiscernable du sain (2,90), et OR014 (3,11) et B021 (3,73) restent proches de la valeur gaussienne de 3. Les défauts les plus impulsifs sont IR014 et OR021 (kurtosis supérieur à 20).
 
-La sévérité ne suit pas le diamètre du défaut : les défauts de 0,014" sont
-souvent moins énergétiques que ceux de 0,007". Chaque diamètre correspondant
-à un roulement et à un essai différents, l'effet du diamètre est confondu avec
-celui de l'essai. L'amplitude vibratoire ne permet donc pas d'estimer la taille
-du défaut.
+La sévérité ne suit pas le diamètre du défaut : les défauts de 0,014" sont souvent moins énergétiques que ceux de 0,007". Chaque diamètre correspondant à un roulement et à un essai différents, l'effet du diamètre est confondu avec celui de l'essai. L'amplitude vibratoire ne permet donc pas d'estimer la taille du défaut.
 
-Enfin, la variabilité est très différente selon les classes : faible pour
-Sain, IR007 et OR007, très élevée pour les défauts de bille de 0,014" et
-0,021", dont le comportement varie fortement d'une charge à l'autre.
+Enfin, la variabilité est très différente selon les classes : faible pour Sain, IR007 et OR007, très élevée pour les défauts de bille de 0,014" et 0,021", dont le comportement varie fortement d'une charge à l'autre.
 
 ## Distribution par classe
 
@@ -402,21 +359,11 @@ plt.tight_layout()
 plt.show()
 ```
 
-Le RMS isole complètement le roulement sain : sa
-distribution ne recouvre celle d'aucune classe de défaut, y compris les plus
-discrètes (OR014, B021). En revanche, aucun indicateur ne sépare à lui seul
-les dix classes. Sur le RMS, plusieurs défauts se recouvrent (B007, B014, B021,
-IR014 ; OR007 et OR021). Le kurtosis ne distingue pas B007 et OR014 du roulement
-sain, et confond IR014 et OR021. Le facteur de crête est l'indicateur le moins
-discriminant.
+Le RMS isole complètement le roulement sain : sa distribution ne recouvre celle d'aucune classe de défaut, y compris les plus discrètes (OR014, B021). En revanche, aucun indicateur ne sépare à lui seul les dix classes. Sur le RMS, plusieurs défauts se recouvrent (B007, B014, B021, IR014 ; OR007 et OR021). Le kurtosis ne distingue pas B007 et OR014 du roulement sain, et confond IR014 et OR021. Le facteur de crête est l'indicateur le moins discriminant.
 
-Les indicateurs apparaissent complémentaires : des classes confondues sur l'un
-sont séparées sur l'autre (B007 et OR014, confondus sur le kurtosis, sont
-distincts sur le RMS). Le défaut B014 présente une dispersion particulièrement
-forte sur tous les indicateurs.
+Les indicateurs apparaissent complémentaires : des classes confondues sur l'un sont séparées sur l'autre (B007 et OR014, confondus sur le kurtosis, sont distincts sur le RMS). Le défaut B014 présente une dispersion particulièrement forte sur tous les indicateurs.
 
-Ces séparations sont observées entre fenêtres issues des mêmes enregistrements
-et ne préjugent pas de la capacité à classer un nouveau roulement.
+Ces séparations sont observées entre fenêtres issues des mêmes enregistrements et ne préjugent pas de la capacité à classer un nouveau roulement.
 
 ## Effet de la charge
 
@@ -435,21 +382,14 @@ plt.tight_layout()
 plt.show()
 ```
 
-L'effet de la charge est faible au regard des différences entre classes : les
-profils sont globalement plats et parallèles, et le roulement sain reste le
-moins énergétique à toutes les charges. Quelques croisements apparaissent entre
-classes proches (B007 et B014 sur le RMS ; IR021, OR007 et B014 sur le
-kurtosis), sans modifier la structure générale des groupes. Le kurtosis est
-l'indicateur le plus stable ; seul IR014 diminue nettement à 3 HP.
+L'effet de la charge est faible au regard des différences entre classes : les profils sont globalement plats et parallèles, et le roulement sain reste le moins énergétique à toutes les charges. Quelques croisements apparaissent entre classes proches (B007 et B014 sur le RMS ; IR021, OR007 et B014 sur le kurtosis), sans modifier la structure générale des groupes. Le kurtosis est l'indicateur le plus stable ; seul IR014 diminue nettement à 3 HP.
 
-La forte dispersion du défaut B014 observée précédemment ne provient pas d'une
-charge particulière, ses médianes étant stables : elle traduit une variabilité
-importante à l'intérieur de chaque enregistrement, cohérente avec le caractère
-intermittent des chocs d'un défaut de bille.
+La forte dispersion du défaut B014 observée précédemment ne provient pas d'une charge particulière, ses médianes étant stables : elle traduit une variabilité importante à l'intérieur de chaque enregistrement, cohérente avec le caractère intermittent des chocs d'un défaut de bille.
 
 Ces conclusions valent pour la plage de vitesse étudiée (1730 à 1797 tr/min).
 
 ## Combinaison de deux indicateurs
+
 ```{python}
 #| label: fig-nuage
 #| fig-cap: "RMS et kurtosis de chaque fenêtre, par classe."
@@ -466,25 +406,13 @@ plt.tight_layout()
 plt.show()
 ```
 
-La combinaison du RMS et du kurtosis sépare la quasi-totalité des classes.
-Les classes confondues sur le kurtosis (Sain, B007, OR014, B021) sont
-distinguées par le RMS, et inversement IR014 et OR021, de kurtosis comparable,
-diffèrent nettement par leur RMS. Seul le défaut B014 forme un nuage diffus
-qui recouvre plusieurs autres classes.
+La combinaison du RMS et du kurtosis sépare la quasi-totalité des classes. Les classes confondues sur le kurtosis (Sain, B007, OR014, B021) sont distinguées par le RMS, et inversement IR014 et OR021, de kurtosis comparable, diffèrent nettement par leur RMS. Seul le défaut B014 forme un nuage diffus qui recouvre plusieurs autres classes.
 
-On observe que certaines classes (Sain, OR007) se divisent en sous-groupes
-correspondant aux différentes charges : chaque enregistrement forme un amas
-compact. La séparation observée reflète donc en partie l'identité des
-enregistrements, et pas seulement la nature du défaut, ce qui devra être pris
-en compte dans la validation des modèles.
+On observe que certaines classes (Sain, OR007) se divisent en sous-groupes correspondant aux différentes charges : chaque enregistrement forme un amas compact. La séparation observée reflète donc en partie l'identité des enregistrements, et pas seulement la nature du défaut, ce qui devra être pris en compte dans la validation des modèles.
 
 ## Variabilité entre fichiers
 
-Les fenêtres d'un même fichier proviennent du même enregistrement : elles ne
-sont pas indépendantes. On décompose la variabilité de chaque indicateur comme
-dans une analyse de variance à un facteur (le fichier) : la part expliquée par
-les différences entre fichiers correspond au rapport $\eta^2$ entre la somme des
-carrés inter-fichiers et la somme des carrés totale.
+Les fenêtres d'un même fichier proviennent du même enregistrement : elles ne sont pas indépendantes. On décompose la variabilité de chaque indicateur comme dans une analyse de variance à un facteur (le fichier) : la part expliquée par les différences entre fichiers correspond au rapport $\eta^2$ entre la somme des carrés inter-fichiers et la somme des carrés totale.
 
 ```{python}
 #| label: tbl-variance
@@ -500,53 +428,30 @@ for ind in INDICATEURS:
 pd.DataFrame(var)
 ```
 
-La quasi-totalité de la variabilité des indicateurs s'explique par les
-différences entre fichiers : 98,9 % pour le RMS, 96,4 % pour la valeur crête,
-et environ 90 % pour le kurtosis et le facteur de crête, plus sensibles au
-caractère intermittent des chocs. Les fenêtres d'un même enregistrement sont
-donc très semblables et ne constituent pas des observations indépendantes :
-la taille d'échantillon effective est proche du nombre de fichiers (40)
-plutôt que du nombre de fenêtres (environ 2 500).
+La quasi-totalité de la variabilité des indicateurs s'explique par les différences entre fichiers : 98,9 % pour le RMS, 96,4 % pour la valeur crête, et environ 90 % pour le kurtosis et le facteur de crête, plus sensibles au caractère intermittent des chocs. Les fenêtres d'un même enregistrement sont donc très semblables et ne constituent pas des observations indépendantes : la taille d'échantillon effective est proche du nombre de fichiers (40) plutôt que du nombre de fenêtres (environ 2 500).
 
-Une validation qui répartirait aléatoirement les fenêtres entre apprentissage
-et test surestimerait fortement les performances. La validation des modèles
-devra séparer les données par fichier ou par charge.
+Une validation qui répartirait aléatoirement les fenêtres entre apprentissage et test surestimerait fortement les performances. La validation des modèles devra séparer les données par fichier ou par charge.
 
 ## Conclusion
 
 ### Principaux enseignements
 
-- **Détection d'un défaut.** Le RMS isole complètement le
-  roulement sain de toutes les classes de défaut, à toutes les charges. Un
-  indicateur d'énergie suffit, sur ces données, à distinguer un roulement sain
-  d'un roulement défectueux.
+- **Détection d'un défaut.** Le RMS isole complètement le roulement sain de toutes les classes de défaut, à toutes les charges. Un indicateur d'énergie suffit, sur ces données, à distinguer un roulement sain d'un roulement défectueux.
 
-- **Identification du type de défaut.** Aucun indicateur ne sépare à lui seul
-  les dix classes. Le kurtosis ne détecte pas certains défauts (B007, OR014),
-  et plusieurs défauts se recouvrent sur le RMS. La combinaison du RMS et du
-  kurtosis sépare en revanche la quasi-totalité des classes.
+- **Identification du type de défaut.** Aucun indicateur ne sépare à lui seul les dix classes. Le kurtosis ne détecte pas certains défauts (B007, OR014), et plusieurs défauts se recouvrent sur le RMS. La combinaison du RMS et du kurtosis sépare en revanche la quasi-totalité des classes.
 
-- **Défauts de bille.** Ce sont les plus difficiles : B007 a un kurtosis
-  identique au sain, et B014 présente une forte variabilité au sein de chaque
-  enregistrement, qui le fait recouvrir plusieurs autres classes.
+- **Défauts de bille.** Ce sont les plus difficiles : B007 a un kurtosis identique au sain, et B014 présente une forte variabilité au sein de chaque enregistrement, qui le fait recouvrir plusieurs autres classes.
 
-- **Sévérité.** L'amplitude vibratoire n'augmente pas avec le diamètre du
-  défaut. Chaque diamètre correspondant à un roulement et à un essai
-  différents, ces données ne permettent pas d'estimer la taille d'un défaut.
+- **Sévérité.** L'amplitude vibratoire n'augmente pas avec le diamètre du défaut. Chaque diamètre correspondant à un roulement et à un essai différents, ces données ne permettent pas d'estimer la taille d'un défaut.
 
-- **Charge.** Son effet est faible au regard des différences entre classes,
-  dans la plage de vitesse étudiée (1730 à 1797 tr/min).
+- **Charge.** Son effet est faible au regard des différences entre classes, dans la plage de vitesse étudiée (1730 à 1797 tr/min).
 
 ### Limites
 
-- Une seule expérience par combinaison de facteurs : les fenêtres d'un fichier
-  sont des pseudo-réplicats (plus de 90 % de la variabilité est inter-fichiers).
+- Une seule expérience par combinaison de facteurs : les fenêtres d'un fichier sont des pseudo-réplicats (plus de 90 % de la variabilité est inter-fichiers).
 - Défauts artificiels (électro-érosion), réalisés sur un seul banc d'essai.
-- Déséquilibre en nombre de fenêtres : la classe « Sain » représente environ
-  28 % des observations.
+- Déséquilibre en nombre de fenêtres : la classe « Sain » représente environ 28 % des observations.
 - Seuls des indicateurs temporels ont été étudiés.
-
-
 
 # Analyse exploratoire : spectres de fréquences
 
@@ -564,12 +469,8 @@ $$
 X(f) = \int_{-\infty}^{+\infty} x(t)\, e^{-i\, 2\pi f t}\, dt
 $$ {#eq-fourier}
 
-- $X(f)$ est un nombre **complexe** : son module $\lvert X(f) \rvert$
-  donne l'**amplitude** de la fréquence $f$ dans le signal, son
-  argument la **phase** ;
-- la transformée inverse
-  $x(t) = \int_{-\infty}^{+\infty} X(f)\, e^{+i\, 2\pi f t}\, df$
-  reconstruit le signal : aucune information n'est perdue.
+- $X(f)$ est un nombre **complexe** : son module $\lvert X(f) \rvert$ donne l'**amplitude** de la fréquence $f$ dans le signal, son argument la **phase** ;
+- la transformée inverse $x(t) = \int_{-\infty}^{+\infty} X(f)\, e^{+i\, 2\pi f t}\, df$ reconstruit le signal : aucune information n'est perdue.
 
 Exemple :
 
@@ -631,10 +532,8 @@ plt.tight_layout(); plt.show()
 > L'algorithme **FFT** (Fast Fourier Transform) calcule la version numérique du signal échantillonné, cependant il comporte **deux contraintes** :
 
 - **Limite haute (théorème de Nyquist-Shannon)** : un signal échantillonné à fs ne peut représenter que des fréquences jusqu'à fs/2. Toute composante au-dessus de cette limite subit le repliement de spectre (aliasing). Pour un signal échantillonné à 12 kHz, toute fréquence au-dessus de 6 kHz :
-    - N'existe pas dans le spectre : l'information est perdue ;
-    - Elle apparaît repliée, à une fausse fréquence, plus basse.
-Conclusion : **le repliement masque les hautes fréquences et pollue les basses fréquences** (de fausses raies se mélangent aux vraies).
-Illustration du repliement de spectre :
+  - N'existe pas dans le spectre : l'information est perdue ;
+  - Elle apparaît repliée, à une fausse fréquence, plus basse. Conclusion : **le repliement masque les hautes fréquences et pollue les basses fréquences** (de fausses raies se mélangent aux vraies). Illustration du repliement de spectre :
 
 ```{python}
 #| fig-cap: "Le repliement (aliasing) à 12 kHz."
@@ -718,9 +617,7 @@ for ax in axes:
 plt.tight_layout(); plt.show()
 ```
 
-
-- **Limite basse (résolution)** : la FFT découpe le spectre en cases espacées de 1/T, T étant la durée analysée. Avec 1 seconde d'observation, la résolution est de 1 Hz : c'est la largeur d'une raie. Deux fréquences plus proches tombent dans la même case : indiscernables, même si elles existent bel et bien dans le signal.
-illustration de la résolution spectrale :
+- **Limite basse (résolution)** : la FFT découpe le spectre en cases espacées de 1/T, T étant la durée analysée. Avec 1 seconde d'observation, la résolution est de 1 Hz : c'est la largeur d'une raie. Deux fréquences plus proches tombent dans la même case : indiscernables, même si elles existent bel et bien dans le signal. illustration de la résolution spectrale :
 
 ```{python}
 #| fig-cap: "La résolution spectrale 1/T"
@@ -797,13 +694,9 @@ plt.tight_layout(); plt.show()
 
 - **La durée d'observation** doit être assez longue pour distinguer des signaux à basse fréquence, sinon les raies fusionnent, et l'information est moins précise.
 
-
-
 ## Etude de cas : défaut de bague intérieure
 
-
-Le cas étudié à titre d'exemple concerne un **défaut de bague intérieure de 0,007"** (0,178 mm) sur le roulement **côté moteur (Drive End)** à une charge de **0 HP (≈1797 tr/min)**.
-Nous utiliserons les données des accéléromètres **côté moteur (Drive End)** et **côté ventilateur (Fan End)**
+Le cas étudié à titre d'exemple concerne un **défaut de bague intérieure de 0,007"** (0,178 mm) sur le roulement **côté moteur (Drive End)** à une charge de **0 HP (≈1797 tr/min)**. Nous utiliserons les données des accéléromètres **côté moteur (Drive End)** et **côté ventilateur (Fan End)**
 
 On vérifie la cohérence des signaux chargés : nombre de points, durée (calculée avec la fréquence annoncée par le catalogue), valeurs manquantes et plage d'amplitude.
 
@@ -820,7 +713,6 @@ STYLES = {  # styles des graphiques (issus de Sources.config)
     "canal":     STYLES_CANAL,
 }
 ```
-
 
 ```{python}
 #|  tbl-cap: "Résumé des signaux, durées calculées avec le fs annoncé par le catalogue."
@@ -890,14 +782,11 @@ pd.DataFrame({
 }).round(4)
 ```
 
-
 On note que **les raies caractéristiques sont directement liées à la vitesse de rotation du moteur** : si la vitesse varie, les raies se déplacent proportionnellement. Il est donc indispensable de connaître la vitesse de rotation exacte pour identifier correctement les raies.
-
 
 ## Signaux temporels brutes
 
 On visualise 0,1 seconde de signal, à échelle d'amplitude commune, et on trace les raies caractéristiques correspondant à chaque défaut.
-
 
 ```{python}
 #| fig-cap: "0,1 seconde de signal ; vert = sain, rouge = défaut ; trait plein = Drive End, tirets = Fan End."
@@ -918,8 +807,7 @@ for ax, (nom, (s, canal, cond)) in zip(axes.flat, SIGNAUX.items()):
 plt.tight_layout(); plt.show()
 ```
 
-Le signal sain a une faible amplitude, les valeurs se concentrent autour de zéro, sans pics ni structure périodique ; c'est le comportement attendu d'un roulement en bon état.
-Sur le canal moteur défectueux, l'amplitude est plus élevée, et on voit des pics et une structure périodique. Ces structures correspondent aux **chocs** du passage d'une bille sur le défaut de la piste intérieure. Le défaut étant sur le roulement moteur, c'est la **BPFI du roulement DE** qui est attendue.
+Le signal sain a une faible amplitude, les valeurs se concentrent autour de zéro, sans pics ni structure périodique ; c'est le comportement attendu d'un roulement en bon état. Sur le canal moteur défectueux, l'amplitude est plus élevée, et on voit des pics et une structure périodique. Ces structures correspondent aux **chocs** du passage d'une bille sur le défaut de la piste intérieure. Le défaut étant sur le roulement moteur, c'est la **BPFI du roulement DE** qui est attendue.
 
 ```{python}
 #| fig-cap: "Zoom sur 30 ms du signal défectueux ; les repères sont espacés de la période BPFI théorique."
@@ -947,9 +835,7 @@ On constate qu'avec ce simple tracé temporel, les chocs semblent être cyclique
 
 ### Tranformation de Fourier (FFT)
 
-Pour analyser chaque signal, nous utilisons la transformée de Fourier (FFT), ce qui nous donne une visualisation du spectre de fréquence de chaque signal.
-L'analyse du spectre d'un signal permet de visualiser l'amplitude du signal pour chaque fréquence.
-Ainsi, on voit clairement quelles fréquences sont excitées, et celles qui ne le sont pas :
+Pour analyser chaque signal, nous utilisons la transformée de Fourier (FFT), ce qui nous donne une visualisation du spectre de fréquence de chaque signal. L'analyse du spectre d'un signal permet de visualiser l'amplitude du signal pour chaque fréquence. Ainsi, on voit clairement quelles fréquences sont excitées, et celles qui ne le sont pas :
 
 ```{python}
 #| fig-cap: "Spectres d'amplitude FFT : le défaut ajoute de l'énergie haute fréquence."
@@ -1074,8 +960,7 @@ ax.grid(alpha=0.3)
 plt.tight_layout(); plt.show()
 ```
 
-Le pic à **BPFI** domine désormais le spectre d'enveloppe côté moteur, confirmé par ses harmoniques : signature d'un défaut de bague intérieure.
-Appliquons maintenant cette analyse aux deux signaux moteur et ventilateur :
+Le pic à **BPFI** domine désormais le spectre d'enveloppe côté moteur, confirmé par ses harmoniques : signature d'un défaut de bague intérieure. Appliquons maintenant cette analyse aux deux signaux moteur et ventilateur :
 
 ```{python}
 #| fig-cap: "Spectres d'enveloppe avec raies caractéristiques, pour les canaux moteur et ventilateur."
@@ -1092,8 +977,6 @@ fig, axes = plt.subplots(2, 1, figsize=(12, 7), sharey=True)
 for ax, (canal, (freqs_env, amp_env)) in zip(axes, ENVELOPPES_DEFAUT.items()):
     ax.plot(freqs_env, amp_env, color="red",
             ls=STYLES["canal"][canal], lw=0.5)
-    ax.set_title(f"Défaut — {canal}  (filtre "
-                 f"{BANDE_RESONANCE[0]}–{BANDE_RESONANCE[1]} Hz)", loc="left")
     ax.set_xlim(0, X_MAX)
     ax.set_ylim(0, Y_MAX * 1.05)
     for nom, val in freqs_caracteristiques(canal, RPM).items():
@@ -1106,10 +989,12 @@ for ax, (canal, (freqs_env, amp_env)) in zip(axes, ENVELOPPES_DEFAUT.items()):
     ax.legend(loc="upper right", fontsize=8, framealpha=0.7)
     ax.set_ylabel("Amplitude d'enveloppe")
     ax.grid(alpha=0.3)
+
+axes[0].set_title(f"Signal coté moteur : Pic net à BPFI, confirmé par les harmoniques", loc="left")
+axes[1].set_title(f"Signal coté ventilateur : Aucun pic correspondant", loc="left")
 axes[-1].set_xlabel("Fréquence (Hz)")
 plt.tight_layout(); plt.show()
 ```
-
 
 Dans le spectre d'enveloppe moteur (en haut) :
 
@@ -1126,85 +1011,13 @@ On peut désormais conclure avec certitude que **le défaut est bien sur la pist
 
 ### Des raies aux indicateurs spectraux
 
-L'analyse d'enveloppe ci-dessus a été menée « à la main » sur un seul cas. Pour
-**caractériser automatiquement** chaque fenêtre de chaque fichier, on extrait
-du spectre d'enveloppe les **indicateurs spectraux** définis dans
-`Sources.indicateurs.indicateurs_spectraux` :
+L'analyse d'enveloppe ci-dessus a été menée « à la main » sur un seul cas. Pour **caractériser automatiquement** chaque fenêtre de chaque fichier, on extrait du spectre d'enveloppe les **indicateurs spectraux** définis dans `Sources.indicateurs.indicateurs_spectraux` :
 
-- `amp_F_k` : amplitude maximale du spectre d'enveloppe autour de k× la raie
-  caractéristique F (pour F ∈ BPFI, BPFO, BSF, FTF et k ∈ 1, 2, 3) ;
-- `ratio_F` : part d'énergie de la raie F fondamentale
-  (`amp_F_1` / somme des `amp_*_1`) — indépendant de l'amplitude absolue ;
+- `amp_F_k` : amplitude maximale du spectre d'enveloppe autour de k× la raie caractéristique F (pour F ∈ BPFI, BPFO, BSF, FTF et k ∈ 1, 2, 3) ;
+- `ratio_F` : part d'énergie de la raie F fondamentale (`amp_F_1` / somme des `amp_*_1`) — indépendant de l'amplitude absolue ;
 - `f_pic` : fréquence du pic dominant du spectre d'enveloppe sous 1 kHz.
 
-```{python}
-#| label: fig-chaine-fenetre
-#| fig-cap: "Chaîne de prétraitement sur une fenêtre de 0,2 s du cas 12kDE_IR007_L0 (fonctions Sources.signaux)."
-#| code-summary: "Les 4 étapes de l'analyse d'enveloppe, fenêtre par fenêtre"
-s = charger("12kDE_IR007_L0")
-fs, rpm = s["fs"], s["rpm"]
-w = fenetrer(s["DE"], fs)[0]            # fenêtre 0 : 2400 points = 0,2 s
-w = w - np.mean(w)                      # étape 1 : centrage
-
-x_filtre = filtrer_passe_bande(w, fs)   # étape 2 : passe-bande 1-4 kHz
-env = extraire_enveloppe(x_filtre)      # étape 3 : enveloppe de Hilbert
-freqs_env, amp_env = spectre_enveloppe(w, fs)   # étape 4 : FFT de l'enveloppe
-
-t = np.arange(len(w)) / fs
-n = int(0.05 * fs)
-
-fig, axes = plt.subplots(4, 1, figsize=(11, 10))
-vues = [
-    ("1. Signal brut (centré) — chocs noyés dans les résonances", w, "#C82909"),
-    (f"2. Passe-bande {BANDE_RESONANCE[0]}–{BANDE_RESONANCE[1]} Hz — résonances seules",
-     x_filtre, "tab:blue"),
-    ("3. Enveloppe (Hilbert) — un pic = un choc", env, "tab:green"),
-]
-for ax, (titre, sig, coul) in zip(axes[:3], vues):
-    ax.plot(t[:n], sig[:n], color=coul, lw=0.8)
-    ax.set_title(titre, loc="left"); ax.set_ylabel("Amplitude"); ax.grid(alpha=0.3)
-
-ax = axes[3]
-ax.plot(freqs_env, amp_env, color="tab:red", lw=0.8)
-ax.set_xlim(0, 600)
-for nom, val in freqs_caracteristiques("DE", rpm).items():
-    couleur, ls = STYLES_RAIES[nom]
-    ax.axvline(val, color=couleur, ls=ls, lw=1.6, alpha=0.6, label=f"{nom} = {val:.1f} Hz")
-    for k in (2, 3):
-        if k * val < 600:
-            ax.axvline(k * val, color=couleur, ls=ls, lw=0.8, alpha=0.25)
-ax.set_title("4. FFT de l'enveloppe — la BPFI domine, confirmée par 2× et 3×", loc="left")
-ax.set_xlabel("Fréquence (Hz)"); ax.set_ylabel("Amplitude d'enveloppe")
-ax.legend(loc="upper right", fontsize=8); ax.grid(alpha=0.3)
-plt.tight_layout(); plt.show()
-```
-
-```{python}
-#| label: fig-fft-brute-vs-enveloppe
-#| fig-cap: "Même fenêtre : la FFT brute ne montre aucune raie caractéristique ; la FFT de l'enveloppe révèle la BPFI."
-fenetre = np.hanning(len(w))
-freqs_brut = np.fft.rfftfreq(N_FFT, d=1 / fs)
-amp_brut = np.abs(np.fft.rfft(w * fenetre, n=N_FFT)) / np.sum(fenetre) * 2
-
-fig, axes = plt.subplots(2, 1, figsize=(11, 6.5), sharex=True)
-axes[0].plot(freqs_brut, amp_brut, color="#C82909", lw=0.5)
-axes[0].set_title("FFT du signal brut : énergie diffuse, aucune raie caractéristique lisible", loc="left")
-axes[0].set_ylabel("Amplitude (g)"); axes[0].grid(alpha=0.3)
-
-axes[1].plot(freqs_env, amp_env, color="tab:red", lw=0.7)
-for nom, val in freqs_caracteristiques("DE", rpm).items():
-    couleur, ls = STYLES_RAIES[nom]
-    axes[1].axvline(val, color=couleur, ls=ls, lw=1.6, alpha=0.6, label=f"{nom} = {val:.1f} Hz")
-axes[1].set_xlim(0, 600)
-axes[1].set_title("FFT de l'enveloppe : pic net à la BPFI + harmoniques", loc="left")
-axes[1].set_xlabel("Fréquence (Hz)"); axes[1].set_ylabel("Amplitude d'enveloppe")
-axes[1].legend(loc="upper right", fontsize=8); axes[1].grid(alpha=0.3)
-plt.tight_layout(); plt.show()
-```
-
-Ces 17 indicateurs spectraux sont calculés pour **chaque fenêtre** de la table
-construite dans la première partie (via `Sources.features.construire_table`),
-aux côtés des 4 indicateurs temporels.
+Ces 17 indicateurs spectraux sont calculés pour **chaque fenêtre** de la table construite dans la première partie (via `Sources.features.construire_table`), aux côtés des 4 indicateurs temporels.
 
 ```{python}
 #| label: tbl-ratios-moyens
@@ -1213,11 +1026,7 @@ cols_ratio = [f"ratio_{F}" for F in ("BPFI", "BPFO", "BSF", "FTF")]
 table.groupby("classe")[cols_ratio + ["f_pic"]].mean().reindex(ORDRE).round(3)
 ```
 
-Chaque type de défaut possède son **ratio dominant** : `ratio_BPFI` pour les
-défauts de bague intérieure (IR), `ratio_BPFO` pour la bague extérieure (OR),
-et des ratios plus diffus pour les défauts de bille (B) — cohérent avec le
-caractère intermittent des chocs de bille. `f_pic` confirme le diagnostic :
-elle vaut ≈162 Hz (BPFI) pour IR, ≈107 Hz (BPFO) pour OR.
+Chaque type de défaut possède son **ratio dominant** : `ratio_BPFI` pour les défauts de bague intérieure (IR), `ratio_BPFO` pour la bague extérieure (OR), et des ratios plus diffus pour les défauts de bille (B) — cohérent avec le caractère intermittent des chocs de bille. `f_pic` confirme le diagnostic : elle vaut ≈162 Hz (BPFI) pour IR, ≈107 Hz (BPFO) pour OR.
 
 ```{python}
 #| label: fig-boxplots-ratios
@@ -1233,10 +1042,7 @@ plt.tight_layout()
 plt.show()
 ```
 
-Les ratios séparent nettement les localisations de défaut : `ratio_BPFI`
-isole les classes IR, `ratio_BPFO` les classes OR. Les indicateurs spectraux
-apportent donc une information **complémentaire** aux indicateurs temporels :
-le RMS détecte *qu'il y a* un défaut, les ratios disent *où* il se situe.
+Les ratios séparent nettement les localisations de défaut : `ratio_BPFI` isole les classes IR, `ratio_BPFO` les classes OR. Les indicateurs spectraux apportent donc une information **complémentaire** aux indicateurs temporels : le RMS détecte *qu'il y a* un défaut, les ratios disent *où* il se situe.
 
 ```{python}
 #| label: fig-nuage-rms-ratio
@@ -1259,17 +1065,10 @@ Le défaut de bague intérieure se manifeste par des **chocs périodiques** à B
 
 # Préparation des données pour la modélisation
 
-La table des indicateurs (4 temporels + 17 spectraux = 21 features) est prête
-pour l'apprentissage. Deux précautions, déjà identifiées dans l'analyse de
-variabilité (section η²) :
+La table des indicateurs (4 temporels + 17 spectraux = 21 features) est prête pour l'apprentissage. Deux précautions, déjà identifiées dans l'analyse de variabilité (section η²) :
 
-- **Séparation par fichier, jamais par fenêtre** : plus de 90 % de la
-  variabilité est inter-fichiers, les fenêtres d'un même enregistrement sont
-  des pseudo-réplicats. `Sources.features.preparer_modeling` répartit les
-  *fichiers* entre train et test (équivalent de `GroupShuffleSplit`) ;
-- **Standardisation sur le train uniquement** : moyenne et écart-type sont
-  calculés sur l'apprentissage, puis appliqués au test (équivalent de
-  `StandardScaler`, sans dépendance sklearn).
+- **Séparation par fichier, jamais par fenêtre** : plus de 90 % de la variabilité est inter-fichiers, les fenêtres d'un même enregistrement sont des pseudo-réplicats. `Sources.features.preparer_modeling` répartit les *fichiers* entre train et test (équivalent de `GroupShuffleSplit`) ;
+- **Standardisation sur le train uniquement** : moyenne et écart-type sont calculés sur l'apprentissage, puis appliqués au test (équivalent de `StandardScaler`, sans dépendance sklearn).
 
 ```{python}
 #| label: preparation-modeling
@@ -1294,8 +1093,7 @@ pd.DataFrame({
 assert set(g_train.unique()) & set(g_test.unique()) == set()
 ```
 
-La table standardisée (avec la colonne `split`) est également sauvegardée pour
-la suite (modélisation) :
+La table standardisée (avec la colonne `split`) est également sauvegardée pour la suite (modélisation) :
 
 ```{python}
 #| label: sauvegarde-modeling
@@ -1309,10 +1107,8 @@ sauvegarder_table(table_modeling, "table_modeling.csv")
 
 # Points d'attentions
 
-- La fréquence d'échantillonnage des fichiers CWRU n'est pas documentée de façon fiable dans les fichiers eux-mêmes : le catalogue repose sur les données textuelles du site.
-La **vérification de la fréquence d'échantillonnage** de chaque signal pourrait permettre d'analyser d'autres données sans avoir cette information.
-- La fréquence de rotation est elle aussi peu fiable car dans certains cas, le RPM affiché sur le site est différent de celui des fichiers `.mat`. Une extraction directement sur base du signal permettrait également de généraliser à d'autres signaux.
-À noter que cette fréquence de rotation pourrait varier au cours d'un même échantillon, ce qui impacterait l'analyse spectrale.
+- La fréquence d'échantillonnage des fichiers CWRU n'est pas documentée de façon fiable dans les fichiers eux-mêmes : le catalogue repose sur les données textuelles du site. La **vérification de la fréquence d'échantillonnage** de chaque signal pourrait permettre d'analyser d'autres données sans avoir cette information.
+- La fréquence de rotation est elle aussi peu fiable car dans certains cas, le RPM affiché sur le site est différent de celui des fichiers `.mat`. Une extraction directement sur base du signal permettrait également de généraliser à d'autres signaux. À noter que cette fréquence de rotation pourrait varier au cours d'un même échantillon, ce qui impacterait l'analyse spectrale.
 - L'unité des signaux n'est pas documentée sur CWRU, l'unité (g) utilisée dans l'analyse est une hypothèse basée sur la litérature relative au domaine.
 
 # Conclusion globale
@@ -1324,7 +1120,6 @@ La **vérification de la fréquence d'échantillonnage** de chaque signal pourra
 - **Durée de vie résiduelle.** Aucune de nos analyses ne nous permet d'estimer cette durée. Le dataset disponible n'ayant pas d'évolution dans le temps, il semble difficile d'avancer sur la question.
 
 # Suite proposée
-
 
 1.  Construire un premier modèle de référence
 2.  Améliorer le feature engineering et tester d'autres modèles plus complexes
