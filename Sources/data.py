@@ -106,20 +106,57 @@ def charger(nom):
                       else float(info["rpm_nominal"]))
     return signaux
 
+def _en_liste(valeur):
+    """Normalise un critère de sélection en liste (None -> pas de filtre)."""
+    if valeur is None:
+        return None
+    if isinstance(valeur, (list, tuple, set)):
+        return list(valeur)
+    return [valeur]
 
-def selectionner(source="12kDE", defauts=("IR", "B", "OR"),
-                 diametres=(7, 14, 21), position_or="6", avec_sains=True):
-    """Sélection de fichiers du catalogue (plan factoriel 12 kHz, côté moteur).
 
-    Écarte le diamètre 0,028", les positions OR 3 h et 12 h (incomplètes),
-    les données 48 kHz et côté ventilateur.
+def selectionner(sources=("12kDE",), defauts=("IR", "B", "OR"),
+                 diametres=(7, 14, 21), positions_or=("6",),
+                 charges=(0, 1, 2, 3), avec_sains=True):
+    """Sélection de fichiers du catalogue, critère par critère.
+
+    Chaque critère accepte une valeur unique ou un tuple de valeurs ;
+    None désactive le filtre (toutes les valeurs sont conservées).
+
+    Paramètres (défauts = plan factoriel 12 kHz côté moteur du rapport) :
+      sources      : ex. ("12kDE",), ("12kDE", "12kFE") ou "48kDE"
+      defauts      : ex. ("IR", "B", "OR") ; None = tous les défauts
+      diametres    : ex. (7, 14, 21) en millièmes de pouce ; None = tous
+      positions_or : ex. ("6",) ; None = toutes les positions (3 h, 6 h, 12 h)
+      charges      : ex. (0, 1, 2, 3) en HP ; None = toutes les charges
+      avec_sains   : inclure les 4 enregistrements 'Normal' (source 'Normal')
+
+    Exemples :
+      selectionner()                                   # plan du rapport (40 fichiers)
+      selectionner(sources=("12kDE", "12kFE"))         # transverse DE + FE
+      selectionner(defauts=("IR",), diametres=7)       # bague int. 0,007" uniquement
+      selectionner(sources="12kDE", charges=(0, 1))    # 0 et 1 HP seulement
     """
+    sources = _en_liste(sources)
+    defauts = _en_liste(defauts)
+    diametres = _en_liste(diametres)
+    positions_or = _en_liste(positions_or)
+    charges = _en_liste(charges)
+
     est_sain = catalogue["source"] == "Normal"
-    est_cible = catalogue["source"] == source
-    bon_defaut = catalogue["defaut"].isin(defauts[:2]) | (
-        catalogue["position_OR"] == position_or)
-    bon_diam = catalogue["diametre_mils"].isin(diametres)
-    masque = est_cible & bon_defaut & bon_diam
+    est_cible = catalogue["source"].isin(sources)
+
+    masque = est_cible
+    if defauts is not None:
+        masque = masque & catalogue["defaut"].isin(defauts)
+    if diametres is not None:
+        masque = masque & catalogue["diametre_mils"].isin(diametres)
+    if positions_or is not None:
+        masque = masque & (catalogue["position_OR"].isin(positions_or)
+                           | catalogue["position_OR"].isna())
+    if charges is not None:
+        masque = masque & catalogue["charge_hp"].isin(charges)
+
     if avec_sains:
-        masque = masque | est_sain
+        masque = masque | (est_sain & catalogue["charge_hp"].isin(charges or [0, 1, 2, 3]))
     return catalogue[masque]

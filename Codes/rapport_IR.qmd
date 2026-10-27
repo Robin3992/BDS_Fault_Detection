@@ -238,7 +238,15 @@ côté ventilateur (autres conditions d'acquisition).
 #| label: selection
 #| code-summary: "Sélection des 40 fichiers"
 #| tbl-cap: "Nombre de fichiers sélectionnés par localisation et diamètre du défaut."
-selection = src_data.selectionner()
+# Chaque critère accepte une valeur ou un tuple ; None = pas de filtre.
+# Ici : 12 kHz côté entraînement, défauts IR/B/OR de 0,007" à 0,021",
+# bague extérieure en position 6 h, charges 0 à 3 HP, + les 4 sains.
+selection = src_data.selectionner(sources=("12kDE",),
+                                  defauts=("IR", "B", "OR"),
+                                  diametres=(7, 14, 21),
+                                  positions_or=("6",),
+                                  charges=(0, 1, 2, 3),
+                                  avec_sains=True)
 selection.groupby(["defaut", "diametre_mils"]).size().unstack(fill_value=0)
 ```
 
@@ -442,14 +450,13 @@ intermittent des chocs d'un défaut de bille.
 Ces conclusions valent pour la plage de vitesse étudiée (1730 à 1797 tr/min).
 
 ## Combinaison de deux indicateurs
-
 ```{python}
 #| label: fig-nuage
 #| fig-cap: "RMS et kurtosis de chaque fenêtre, par classe."
 fig, ax = plt.subplots(figsize=(10, 7))
 for c in ORDRE:
-g = table[table["classe"] == c]
-ax.scatter(g["RMS"], g["Kurtosis"], s=8, alpha=0.5, label=c)
+    g = table[table["classe"] == c]
+    ax.scatter(g["RMS"], g["Kurtosis"], s=8, alpha=0.5, label=c)
 ax.set_xscale("log")
 ax.set_yscale("log")
 ax.set_xlabel("RMS (échelle log)")
