@@ -223,17 +223,35 @@ catalogue["rpm_nominal"] = catalogue["charge_hp"].map(RPM_NOMINAL)
 # 1.3 Lecture d'un fichier depuis le site (copie locale sous un nom lisible)
 # ------------------------------------------------------------------
 URL_CWRU = "https://engineering.case.edu/sites/default/files/"
-CACHE = Path("../data/cwru_cache")
+
+def trouver_racine(repo="BDS_Fault_Detection", depart=None):
+    """Remonte l'arborescence depuis le code en exécution jusqu'au dossier du dépôt et renvoie son chemin absolu."""
+    dossier = Path(depart) if depart is not None else Path.cwd()
+    dossier = dossier.resolve()
+    if dossier.is_file():
+        dossier = dossier.parent
+    for parent in (dossier, *dossier.parents):
+        if repo in parent.name:
+            return parent
+    raise FileNotFoundError(f"Racine '{repo}' introuvable depuis {dossier}")
+
+
+
+RACINE = trouver_racine()
+CACHE_path = RACINE / "data" / "cwru_cache"
+FEATURES_path = RACINE / "data" / "features"
+
+
 
 def charger(nom):
     """Renvoie {'DE', 'FE', 'BA', 'fs', 'rpm'} pour un fichier du catalogue
     (ex. '12kDE_IR007_L0')."""
     info = catalogue.loc[nom]
     numero = int(info["numero"])
-    chemin = CACHE / f"{nom}__{numero}.mat"            # ex. 12kDE_IR007_L0__105.mat
+    chemin = CACHE_path / f"{nom}__{numero}.mat"            # ex. 12kDE_IR007_L0__105.mat
 
     if not chemin.exists():                            # 1re fois : téléchargement depuis le site
-        CACHE.mkdir(parents=True, exist_ok=True)
+        CACHE_path.mkdir(parents=True, exist_ok=True)
         with urllib.request.urlopen(URL_CWRU + f"{numero}.mat") as reponse:
             chemin.write_bytes(reponse.read())
     mat = loadmat(chemin)
@@ -369,8 +387,8 @@ table = pd.DataFrame(lignes)
 table["classe"] = np.where(table["defaut"] == "Sain", "Sain",
                            table["defaut"] + table["diametre_mils"].astype(str).str.zfill(3))
 
-Path("../data/features").mkdir(parents=True, exist_ok=True)
-table.to_csv("../data/features/table_indicateurs.csv", index=False)
+Path(FEATURES_path).mkdir(parents=True, exist_ok=True)
+table.to_csv(FEATURES_path / "table_indicateurs.csv", index=False)
 
 #print(f"{len(table)} fenêtres issues de {table['fichier'].nunique()} fichiers")
 table.groupby(["classe", "charge_hp"]).size().unstack()
