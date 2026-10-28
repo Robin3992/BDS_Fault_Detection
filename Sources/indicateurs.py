@@ -50,4 +50,4 @@ def indicateurs_spectraux(x, fs, rpm, roulement="DE",
 COLONNES_TEMPORELS = ["RMS", "Pic", "Crete", "Kurtosis"]
 COLONNES_SPECTRAUX = ([f"amp_{F}_{k}" for F in RAIES for k in HARMONIQUES]
                       + [f"ratio_{F}" for F in RAIES] + ["f_pic"])
-TOUTES_COLONNES = COLONNES_TEMPORELS + COLONNES_SPECTRAUX
+COLONNES_INDICATEURS = COLONNES_TEMPORELS + COLONNES_SPECTRAUX

@@ -151,7 +151,7 @@ from Sources.signaux import (extraire_enveloppe, filtrer_passe_bande,
                              freqs_caracteristiques, spectre_enveloppe,
                              spectre_fft)
 from Sources.indicateurs import (COLONNES_SPECTRAUX, COLONNES_TEMPORELS,
-                                 TOUTES_COLONNES, indicateurs_spectraux,
+                                 COLONNES_INDICATEURS, indicateurs_spectraux,
                                  indicateurs_temporels)
 from Sources.features import (construire_table, fenetrer,
                               preparer_modeling, sauvegarder_table)
@@ -1072,10 +1072,10 @@ La table des indicateurs (4 temporels + 17 spectraux = 21 features) est prête p
 
 ```{python}
 #| label: preparation-modeling
-#| code-summary: "Split par fichier + standardisation (Sources.features.preparer_modeling)"
+#| code-summary: "Split par fichier + standardisation"
 #| tbl-cap: "Répartition des fichiers entre apprentissage et test."
 X_train, X_test, y_train, y_test, g_train, g_test = preparer_modeling(
-    table, TOUTES_COLONNES)
+    table, COLONNES_INDICATEURS)
 
 pd.DataFrame({
     "split": ["train", "test"],
@@ -1099,11 +1099,103 @@ La table standardisée (avec la colonne `split`) est également sauvegardée pou
 #| label: sauvegarde-modeling
 #| include: false
 table_modeling = table.copy()
-table_modeling[TOUTES_COLONNES] = pd.concat([X_train, X_test]).sort_index()
+table_modeling[COLONNES_INDICATEURS] = pd.concat([X_train, X_test]).sort_index()
 table_modeling["split"] = np.where(table_modeling["fichier"].isin(g_test.unique()),
                                    "test", "train")
 sauvegarder_table(table_modeling, "table_modeling.csv")
 ```
+
+
+
+```{python}
+#| label: Visu des données pour la modélisation
+
+display(table_modeling.head(5))
+display(table_modeling[table_modeling["classe"] != "Sain"].head(5))
+table_modeling.info()
+```
+
+
+
+```{python}
+#| label: regression logistique
+from sklearn import linear_model
+
+X_train = table_modeling.loc[table_modeling["split"] == "train", COLONNES_INDICATEURS]
+X_test  = table_modeling.loc[table_modeling["split"] == "test", COLONNES_INDICATEURS]
+y_train = table_modeling.loc[table_modeling["split"] == "train", "classe"]
+y_test  = table_modeling.loc[table_modeling["split"] == "test", "classe"]
+
+logreg = linear_model.LogisticRegression(max_iter=500, random_state=24)
+logreg.fit(X_train, y_train)
+y_pred = logreg.predict(X_test)
+cm = pd.crosstab(y_test, y_pred, rownames=['Classe réelle'], colnames=['Classe prédite'])
+```
+
+
+```{python}
+#| label: regression logistique
+from sklearn.metrics import classification_report
+display(cm)
+print(classification_report(y_test, y_pred))
+
+from sklearn.metrics import roc_curve, auc, roc_auc_score
+from sklearn.preprocessing import label_binarize
+import matplotlib.pyplot as plt
+
+# Probabilités prédites (une colonne par classe)
+probs = logreg.predict_proba(X_test)
+
+# Vraies classes en 0/1 (une colonne par classe)
+classes = logreg.classes_
+y_bin = label_binarize(y_test, classes=classes)
+
+# Courbes ROC par classe
+plt.figure(figsize=(8, 6))
+for i, c in enumerate(classes):
+    fpr, tpr, _ = roc_curve(y_bin[:, i], probs[:, i])
+    plt.plot(fpr, tpr, label=f"{c} (AUC = {auc(fpr, tpr):.2f})")
+
+plt.plot([0, 1], [0, 1], "k--", label="hasard")
+plt.xlabel("Faux positifs")
+plt.ylabel("Vrais positifs")
+plt.title("Courbes ROC — une par classe")
+plt.legend()
+plt.show()
+
+```
+
+
+
+```{python}
+#| label: arbre de décision : def+fit
+from sklearn.tree import DecisionTreeClassifier
+
+Model_tree = DecisionTreeClassifier(criterion='entropy', max_depth=4, random_state=123)
+Model_tree.fit(X_train, y_train)
+y_pred = Model_tree.predict(X_test)
+```
+
+```{python}
+#| label: arbre de décision : results
+
+pd.crosstab(y_test, y_pred, rownames=['real'], colnames=['pred'])
+
+feats = {}
+for feature, importance in zip(X_test.columns, Model_tree.feature_importances_):
+    feats[feature] = importance
+importances = pd.DataFrame.from_dict(feats, orient='index')
+importances = importances.rename(columns={0:'Importance'})
+importances = importances.sort_values('Importance', ascending=False)
+display(importances[importances['Importance'] != 0])
+display(importances[importances['Importance'] == 0])
+
+from sklearn.tree import plot_tree
+plt.figure(figsize=(16, 12))
+plot_tree(Model_tree, feature_names=X_test.columns, class_names=Model_tree.classes_, filled=True, fontsize=8, proportion=True);
+```
+
+
 
 # Points d'attentions
 
