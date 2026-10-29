@@ -117,6 +117,14 @@ Les données proviennent des quatre pages de téléchargement du *Bearing Data C
 
 Le catalogue compte 161 fichiers, répartis comme indiqué dans le @tbl-catalogue. Les défauts de bague extérieure sont plus nombreux, car ils ont été étudiés à trois positions par rapport à la zone de charge (3 h, 6 h et 12 h). Le plan n'est cependant pas complet : certaines combinaisons de diamètre, de position et de charge n'ont pas été enregistrées, en particulier pour le roulement côté ventilateur, et le diamètre de 0,028" n'existe qu'à 12 kHz côté entraînement, pour la bague intérieure et la bille.
 
+
+```{python}
+#  echo: false
+# Recharge automatiquement les modules modifiés (évite de redémarrer le kernel)
+%load_ext autoreload
+%autoreload 2
+```
+
 ```{python}
 #| tbl-cap: "Nombre de fichiers du catalogue CWRU par source et type de défaut."
 #| label: tbl-catalogue
@@ -1065,16 +1073,19 @@ Le défaut de bague intérieure se manifeste par des **chocs périodiques** à B
 
 # Préparation des données pour la modélisation
 
-La table des indicateurs (4 temporels + 17 spectraux = 21 features) est prête pour l'apprentissage. Deux précautions, déjà identifiées dans l'analyse de variabilité (section η²) :
+La table des indicateurs (4 temporels + (4x4 + 1) 17 spectraux = 21 features) est prête pour l'apprentissage. Deux précautions, déjà identifiées dans l'analyse de variabilité :
 
-- **Séparation par fichier, jamais par fenêtre** : plus de 90 % de la variabilité est inter-fichiers, les fenêtres d'un même enregistrement sont des pseudo-réplicats. `Sources.features.preparer_modeling` répartit les *fichiers* entre train et test (équivalent de `GroupShuffleSplit`) ;
+- **Séparation par fichier, jamais par fenêtre** : la majorité de la variabilité est inter-fichiers, les fenêtres d'un même enregistrement sont des pseudo-réplicats, c'est à dire qu'ils portent sensiblement les mêmes informations. On répartit les *fichiers* entre train et test, puis on applique le split par fenêtre à l'intérieur de chaque fichier.
 - **Standardisation sur le train uniquement** : moyenne et écart-type sont calculés sur l'apprentissage, puis appliqués au test (équivalent de `StandardScaler`, sans dépendance sklearn).
 
 ```{python}
 #| label: preparation-modeling
 #| code-summary: "Split par fichier + standardisation"
 #| tbl-cap: "Répartition des fichiers entre apprentissage et test."
-X_train, X_test, y_train, y_test, g_train, g_test = preparer_modeling(
+
+from Sources.features import preparer_modeling_strat
+
+X_train, X_test, y_train, y_test, g_train, g_test = preparer_modeling_strat(
     table, COLONNES_INDICATEURS)
 
 pd.DataFrame({
@@ -1110,9 +1121,7 @@ sauvegarder_table(table_modeling, "table_modeling.csv")
 ```{python}
 #| label: Visu des données pour la modélisation
 
-display(table_modeling.head(5))
-display(table_modeling[table_modeling["classe"] != "Sain"].head(5))
-table_modeling.info()
+table_modeling.loc[table_modeling["split"] == "test", COLONNES_INDICATEURS]
 ```
 
 
@@ -1127,17 +1136,33 @@ y_train = table_modeling.loc[table_modeling["split"] == "train", "classe"]
 y_test  = table_modeling.loc[table_modeling["split"] == "test", "classe"]
 
 logreg = linear_model.LogisticRegression(max_iter=500, random_state=24)
+logregb = linear_model.LogisticRegression(max_iter=500, random_state=24, class_weight="balanced") ##  >> Pour gérer le déséquilibre de classes
+
 logreg.fit(X_train, y_train)
+logregb.fit(X_train, y_train)
+
 y_pred = logreg.predict(X_test)
+y_predb = logregb.predict(X_test)
 cm = pd.crosstab(y_test, y_pred, rownames=['Classe réelle'], colnames=['Classe prédite'])
+cmb = pd.crosstab(y_test, y_predb, rownames=['Classe réelle'], colnames=['Classe prédite'])
 ```
 
 
 ```{python}
 #| label: regression logistique
 from sklearn.metrics import classification_report
+print("###### LogReg standard ######")
 display(cm)
 print(classification_report(y_test, y_pred))
+
+print("###### LogReg class_weight=balanced ######")
+display(cmb)
+print(classification_report(y_test, y_predb))
+
+```
+
+
+```{python}
 
 from sklearn.metrics import roc_curve, auc, roc_auc_score
 from sklearn.preprocessing import label_binarize
@@ -1190,9 +1215,34 @@ importances = importances.sort_values('Importance', ascending=False)
 display(importances[importances['Importance'] != 0])
 display(importances[importances['Importance'] == 0])
 
+print("Enseignements :")
+print("> Déséquilibre du dataset à gérer (beaucoup de défauts, peu de sain)")
+print("> Répartition entre le train et le test :")
+print(">>> chaque type de défaut doit être coté train et test pour que le modèle puisse apprendre et prédire correctement")
+print(">>> Un même fichier ne doit pas avoir de fenêtre coté train et test (pseudo réplicats : fuite de données)")
+print("> Les indicateurs (features) doivent être construits avec beaucoup de soin pour que le modèle puisse apprendre correctement")
+
+```
+
+
+```{python}
 from sklearn.tree import plot_tree
 plt.figure(figsize=(16, 12))
 plot_tree(Model_tree, feature_names=X_test.columns, class_names=Model_tree.classes_, filled=True, fontsize=8, proportion=True);
+```
+
+
+```{python}
+#| label: arbre de décision : results
+
+catalogue
+"""
+tab = catalogue.groupby(["source", "defaut"]).size().unstack(fill_value=0)
+tab = tab[["Sain", "IR", "B", "OR"]].reindex(["Normal", "12kDE", "48kDE", "12kFE"])
+tab = tab.reset_index().rename(columns={"source": "Source", "IR": "Bague int. (IR)",
+                                        "B": "Bille (B)", "OR": "Bague ext. (OR)"})
+"""
+Markdown(tab.to_markdown(index=False))
 ```
 
 

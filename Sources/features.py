@@ -1,6 +1,8 @@
 """Construction de la table des indicateurs et préparation de la modélisation."""
 import numpy as np
 import pandas as pd
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import StratifiedGroupKFold
 
 from .config import DUREE_FENETRE, FEATURES
 from .indicateurs import indicateurs_spectraux, indicateurs_temporels
@@ -66,3 +68,52 @@ def preparer_modeling(table, features, test_size=0.25, seed=42):
     return ((X[~est_test] - moy) / std, (X[est_test] - moy) / std,
             y[~est_test], y[est_test],
             groupes[~est_test], groupes[est_test])
+
+
+
+
+def preparer_modeling_DE_FE(table, features, test_size=0.25, seed=42):
+    X, y, groupes = table[features], table["classe"], table["fichier"]
+
+    n_splits = round(1 / test_size)          # test_size=0.25 -> 4 splits
+    cv = StratifiedGroupKFold(n_splits=n_splits, shuffle=True,
+                              random_state=seed)
+    i_train, i_test = next(cv.split(X, y, groupes))
+    scaler = StandardScaler()
+    X_train = pd.DataFrame(scaler.fit_transform(X.iloc[i_train]),
+                           columns=features, index=X.index[i_train])
+    X_test = pd.DataFrame(scaler.transform(X.iloc[i_test]),
+                          columns=features, index=X.index[i_test])
+    return (X_train, X_test,
+        y.iloc[i_train], y.iloc[i_test],
+        groupes.iloc[i_train], groupes.iloc[i_test])
+
+
+
+
+
+
+
+
+def preparer_modeling_strat(table, features, test_size=0.25, seed=42):
+
+    """Sépare les données par FICHIER, de façon STRATIFIÉE : chaque classe
+    est représentée dans le test (évite qu'une classe minoritaire soit
+    absente du test par hasard). Standardise sur le train uniquement.
+ 
+     Renvoie (X_train, X_test, y_train, y_test, g_train, g_test).
+     """
+    X, y, groupes = table[features], table["classe"], table["fichier"]
+
+    n_splits = round(1 / test_size)          # test_size=0.25 -> 4 splits
+    cv = StratifiedGroupKFold(n_splits=n_splits, shuffle=True,
+                              random_state=seed)
+    i_train, i_test = next(cv.split(X, y, groupes))
+    scaler = StandardScaler()
+    X_train = pd.DataFrame(scaler.fit_transform(X.iloc[i_train]),
+                           columns=features, index=X.index[i_train])
+    X_test = pd.DataFrame(scaler.transform(X.iloc[i_test]),
+                          columns=features, index=X.index[i_test])
+    return (X_train, X_test,
+        y.iloc[i_train], y.iloc[i_test],
+        groupes.iloc[i_train], groupes.iloc[i_test])
