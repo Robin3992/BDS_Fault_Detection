@@ -15,29 +15,29 @@ def fenetrer(x, fs, duree=DUREE_FENETRE):
     return [x[i * taille:(i + 1) * taille] for i in range(len(x) // taille)]
 
 
-def construire_table(selection, charger, canal="DE"):
-    """Construit la table des indicateurs : une ligne par fenêtre de 0,2 s.
+def construire_table(selection, charger, canaux=("DE",)):
+    """Construit la table des indicateurs : une ligne par (fichier, fenêtre, canal).
 
-    selection : DataFrame du catalogue (ex. data.selectionner()) indexé par nom.
-    charger   : fonction data.charger (injectée pour éviter le couplage).
-
-    Colonnes : identification (fichier, fenetre, rpm), conditions d'essai
-    (recopiées du catalogue), étiquette `classe`, 4 indicateurs temporels
-    et 17 indicateurs spectraux.
+    canaux : ("DE",) par défaut ; ("DE", "FE") pour l'analyse transverse.
+    La colonne `canal` identifie le capteur, et `roulement` est déduit du canal
+    pour les fréquences caractéristiques (DE→6205, FE→6203).
     """
     lignes = []
     for nom, info in selection.iterrows():
         s = charger(nom)
-        x, fs, rpm = s[canal], s["fs"], s["rpm"]
-        for i, w in enumerate(fenetrer(x, fs)):
-            res = {"fichier": nom, "fenetre": i, "rpm": rpm, **info.to_dict()}
-            res.update(indicateurs_temporels(w))
-            res.update(indicateurs_spectraux(w, fs, rpm))
-            lignes.append(res)
+        fs, rpm = s["fs"], s["rpm"]
+        for canal in canaux:
+            roulement = canal if canal in ("DE", "FE") else "DE"
+            x = s[canal]
+            for i, w in enumerate(fenetrer(x, fs)):
+                res = {"fichier": nom, "fenetre": i, "rpm": rpm, "canal": canal,
+                       **info.to_dict()}
+                res.update(indicateurs_temporels(w))
+                res.update(indicateurs_spectraux(w, fs, rpm, roulement=roulement))
+                lignes.append(res)
     table = pd.DataFrame(lignes)
     table["classe"] = np.where(table["defaut"] == "Sain", "Sain",
-                               table["defaut"]
-                               + table["diametre_mils"].astype(str).str.zfill(3))
+                               table["defaut"] + table["diametre_mils"].astype(str).str.zfill(3))
     return table
 
 
