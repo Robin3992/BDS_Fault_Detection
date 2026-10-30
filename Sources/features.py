@@ -2,7 +2,8 @@
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import StratifiedGroupKFold
+from sklearn.model_selection import StratifiedGroupKFold, GroupShuffleSplit
+
 
 from .config import DUREE_FENETRE, FEATURES
 from .indicateurs import indicateurs_spectraux, indicateurs_temporels
@@ -50,27 +51,29 @@ def sauvegarder_table(table, nom_fichier="table_indicateurs.csv"):
     return chemin
 
 
-def preparer_modeling(table, features, test_size=0.25, seed=42):
-    """Sépare les données par FICHIER (jamais par fenêtre : > 90 % de la
-    variabilité est inter-fichiers) et standardise (moyenne/écart-type
-    calculés sur le train uniquement, équivalent manuel de
-    GroupShuffleSplit + StandardScaler, sans dépendance sklearn).
+def preparer_modeling(table, features, test_size=0.25, seed=42, strat=True):
+    """Sépare par FICHIER et standardise sur le train uniquement.
 
-    Renvoie (X_train, X_test, y_train, y_test, g_train, g_test).
+    strat=True  (défaut) : StratifiedGroupKFold — chaque classe garantie dans le test. Recommandé.
+    strat=False          : GroupShuffleSplit — split aléatoire simple par fichier.
     """
     X, y, groupes = table[features], table["classe"], table["fichier"]
-    fichiers = np.sort(groupes.unique())
-    rng = np.random.default_rng(seed)
-    n_test = max(1, int(round(test_size * len(fichiers))))
-    fichiers_test = rng.choice(fichiers, size=n_test, replace=False)
-    est_test = groupes.isin(fichiers_test)
-    moy = X[~est_test].mean()
-    std = X[~est_test].std().replace(0, 1)      # évite la division par zéro
-    return ((X[~est_test] - moy) / std, (X[est_test] - moy) / std,
-            y[~est_test], y[est_test],
-            groupes[~est_test], groupes[est_test])
 
+    if strat:
+        n_splits = round(1 / test_size)
+        cv = StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+    else:
+        cv = GroupShuffleSplit(n_splits=1, test_size=test_size, random_state=seed)
+    i_train, i_test = next(cv.split(X, y, groupes))
 
+    scaler = StandardScaler()
+    X_train = pd.DataFrame(scaler.fit_transform(X.iloc[i_train]),
+                           columns=features, index=X.index[i_train])
+    X_test  = pd.DataFrame(scaler.transform(X.iloc[i_test]),
+                           columns=features, index=X.index[i_test])
+    return (X_train, X_test,
+            y.iloc[i_train], y.iloc[i_test],
+            groupes.iloc[i_train], groupes.iloc[i_test])
 
 
 def preparer_modeling_DE_FE(table, features, canal_train="DE", canal_test="FE"):
@@ -81,8 +84,7 @@ def preparer_modeling_DE_FE(table, features, canal_train="DE", canal_test="FE"):
     # est_test  = table["canal"] == canal_test
     est_train = (table["canal"] == canal_train) & (table["source"] != f"12k{canal_test}")
     est_test  = (table["canal"] == canal_test)  & (table["source"] != f"12k{canal_train}")
-    assert est_train.any() and est_test.any(), \
-        f"Canaux {canal_train!r}/{canal_test!r} absents de la table"
+    assert est_train.any() and est_test.any(), f"Canaux {canal_train!r}/{canal_test!r} absents de la table"
 
     X_tr_raw = table.loc[est_train, features]
     X_te_raw = table.loc[est_test,  features]
@@ -96,33 +98,3 @@ def preparer_modeling_DE_FE(table, features, canal_train="DE", canal_test="FE"):
     return (X_train, X_test,
             table.loc[est_train, "classe"], table.loc[est_test, "classe"],
             table.loc[est_train, "fichier"], table.loc[est_test, "fichier"])
-
-
-
-
-
-
-
-
-def preparer_modeling_strat(table, features, test_size=0.25, seed=42):
-
-    """Sépare les données par FICHIER, de façon STRATIFIÉE : chaque classe
-    est représentée dans le test (évite qu'une classe minoritaire soit
-    absente du test par hasard). Standardise sur le train uniquement.
- 
-     Renvoie (X_train, X_test, y_train, y_test, g_train, g_test).
-     """
-    X, y, groupes = table[features], table["classe"], table["fichier"]
-
-    n_splits = round(1 / test_size)          # test_size=0.25 -> 4 splits
-    cv = StratifiedGroupKFold(n_splits=n_splits, shuffle=True,
-                              random_state=seed)
-    i_train, i_test = next(cv.split(X, y, groupes))
-    scaler = StandardScaler()
-    X_train = pd.DataFrame(scaler.fit_transform(X.iloc[i_train]),
-                           columns=features, index=X.index[i_train])
-    X_test = pd.DataFrame(scaler.transform(X.iloc[i_test]),
-                          columns=features, index=X.index[i_test])
-    return (X_train, X_test,
-        y.iloc[i_train], y.iloc[i_test],
-        groupes.iloc[i_train], groupes.iloc[i_test])
