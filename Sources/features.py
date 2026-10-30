@@ -76,12 +76,15 @@ def preparer_modeling(table, features, test_size=0.25, seed=42, strat=True):
             groupes.iloc[i_train], groupes.iloc[i_test])
 
 
-def preparer_modeling_DE_FE(table, features, canal_train="DE", canal_test="FE"):
+def preparer_modeling_DE_FE(table, features, canal_train="DE", canal_test="FE", target="classe"):
     """Split TRANSVERSE par canal : train sur `canal_train` (DE),
-    test sur `canal_test` (FE). ..."""
+    test sur `canal_test` (FE).
+
+    target : colonne utilisée comme étiquette de classe
+             ("classe" = 10 classes IR007/..., "defaut" = 4 classes Sain/IR/B/OR)
+    ..."""
     assert "canal" in table.columns, "La table doit contenir une colonne 'canal'"
-    # est_train = table["canal"] == canal_train
-    # est_test  = table["canal"] == canal_test
+    assert target in table.columns, f"Colonne cible {target!r} absente de la table"
     est_train = (table["canal"] == canal_train) & (table["source"] != f"12k{canal_test}")
     est_test  = (table["canal"] == canal_test)  & (table["source"] != f"12k{canal_train}")
     assert est_train.any() and est_test.any(), f"Canaux {canal_train!r}/{canal_test!r} absents de la table"
@@ -96,5 +99,39 @@ def preparer_modeling_DE_FE(table, features, canal_train="DE", canal_test="FE"):
                            columns=features, index=X_te_raw.index)
 
     return (X_train, X_test,
-            table.loc[est_train, "classe"], table.loc[est_test, "classe"],
+            table.loc[est_train, target], table.loc[est_test, target],
             table.loc[est_train, "fichier"], table.loc[est_test, "fichier"])
+
+
+
+def equilibrer(X_train, y_train, X_test, y_test, type="train", n=None, seed=42):
+    """
+    Équilibre les classes par sous-échantillonnage (tirage aléatoire reproductible).
+
+    type='min'       : train et test équilibrés chacun sur leur propre classe minoritaire
+    type='train'     : seul le train est équilibré (sur sa classe minoritaire, ou n) — test intact
+    type='train2test': comme 'train', et le test est plafonné au même n
+    n                : plafond de fenêtres par classe (None = min de la classe concernée)
+    """
+    def sous_echantillonner(X, y, n):
+        idx = []
+        for c in y.unique():
+            idx += y[y == c].sample(n=min(n, (y == c).sum()),
+                                     random_state=seed).index.tolist()
+        return X.loc[idx], y.loc[idx]
+    
+    if type == "nope":
+        return X_train, y_train, X_test, y_test
+    if type == "min":
+        n_tr = n or y_train.value_counts().min()
+        n_te = n or y_test.value_counts().min()
+        return (*sous_echantillonner(X_train, y_train, n_tr),
+                *sous_echantillonner(X_test, y_test, n_te))
+    if type == "train":
+        n = n or y_train.value_counts().min()
+        return (*sous_echantillonner(X_train, y_train, n), X_test, y_test)
+    if type == "train2test":
+        n = n or y_train.value_counts().min()
+        return (*sous_echantillonner(X_train, y_train, n),
+                *sous_echantillonner(X_test, y_test, n))
+    raise ValueError(f"type inconnu : {type!r} (attendu : 'min', 'train', 'train2test')")
