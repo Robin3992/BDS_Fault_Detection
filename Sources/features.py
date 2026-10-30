@@ -27,7 +27,8 @@ def construire_table(selection, charger, canaux=("DE",)):
         s = charger(nom)
         fs, rpm = s["fs"], s["rpm"]
         for canal in canaux:
-            roulement = canal if canal in ("DE", "FE") else "DE"
+            # roulement = canal if canal in ("DE", "FE") else "DE"
+            roulement = "FE" if "FE" in nom else "DE"   # selon le FICHIER, pas le canal !
             x = s[canal]
             for i, w in enumerate(fenetrer(x, fs)):
                 res = {"fichier": nom, "fenetre": i, "rpm": rpm, "canal": canal,
@@ -72,21 +73,29 @@ def preparer_modeling(table, features, test_size=0.25, seed=42):
 
 
 
-def preparer_modeling_DE_FE(table, features, test_size=0.25, seed=42):
-    X, y, groupes = table[features], table["classe"], table["fichier"]
+def preparer_modeling_DE_FE(table, features, canal_train="DE", canal_test="FE"):
+    """Split TRANSVERSE par canal : train sur `canal_train` (DE),
+    test sur `canal_test` (FE). ..."""
+    assert "canal" in table.columns, "La table doit contenir une colonne 'canal'"
+    # est_train = table["canal"] == canal_train
+    # est_test  = table["canal"] == canal_test
+    est_train = (table["canal"] == canal_train) & (table["source"] != f"12k{canal_test}")
+    est_test  = (table["canal"] == canal_test)  & (table["source"] != f"12k{canal_train}")
+    assert est_train.any() and est_test.any(), \
+        f"Canaux {canal_train!r}/{canal_test!r} absents de la table"
 
-    n_splits = round(1 / test_size)          # test_size=0.25 -> 4 splits
-    cv = StratifiedGroupKFold(n_splits=n_splits, shuffle=True,
-                              random_state=seed)
-    i_train, i_test = next(cv.split(X, y, groupes))
+    X_tr_raw = table.loc[est_train, features]
+    X_te_raw = table.loc[est_test,  features]
+
     scaler = StandardScaler()
-    X_train = pd.DataFrame(scaler.fit_transform(X.iloc[i_train]),
-                           columns=features, index=X.index[i_train])
-    X_test = pd.DataFrame(scaler.transform(X.iloc[i_test]),
-                          columns=features, index=X.index[i_test])
+    X_train = pd.DataFrame(scaler.fit_transform(X_tr_raw),
+                           columns=features, index=X_tr_raw.index)
+    X_test  = pd.DataFrame(scaler.transform(X_te_raw),
+                           columns=features, index=X_te_raw.index)
+
     return (X_train, X_test,
-        y.iloc[i_train], y.iloc[i_test],
-        groupes.iloc[i_train], groupes.iloc[i_test])
+            table.loc[est_train, "classe"], table.loc[est_test, "classe"],
+            table.loc[est_train, "fichier"], table.loc[est_test, "fichier"])
 
 
 
