@@ -77,8 +77,9 @@ def preparer_modeling(table, features, test_size=0.25, seed=42, strat=True):
 
 
 def preparer_modeling_DE_FE(table, features, canal_train="DE", canal_test="FE", target="classe"):
-    """Split TRANSVERSE par canal : train sur `canal_train` (DE),
-    test sur `canal_test` (FE).
+    """Split TRANSVERSE par canal : 
+    -> train sur `canal_train` (DE)
+    -> test sur `canal_test` (FE)
 
     target : colonne utilisée comme étiquette de classe
              ("classe" = 10 classes IR007/..., "defaut" = 4 classes Sain/IR/B/OR)
