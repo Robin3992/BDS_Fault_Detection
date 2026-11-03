@@ -19,12 +19,15 @@ def indicateurs_temporels(x):
     """4 indicateurs temporels classiques de la surveillance vibratoire."""
     rms = np.sqrt(np.mean(x ** 2))
     pic = np.max(np.abs(x))
-    return {"RMS": rms, "Pic": pic, "Crete": pic / rms,
-            "Kurtosis": kurtosis(x, fisher=False)}
+    # Remplacement de la fonciton Kurtosis de scipy.stats par la version manuelle pour améliorer la vitesse de calcul
+    z = (x - x.mean()) / x.std()
 
+    return {"RMS": rms, "Pic": pic, "Crete": pic / rms,
+            # "Kurtosis": kurtosis(x, fisher=False)} remplacement Kurtosis de scipy.stats par la version manuelle
+            "Kurtosis": float(np.mean(z**4))}
 
 def indicateurs_spectraux(x, fs, rpm, roulement="DE",
-                          harmoniques=HARMONIQUES, demi_bande=DEMI_BANDE):
+                          harmoniques=HARMONIQUES, demi_bande=DEMI_BANDE, sos=None):
     """17 indicateurs spectraux extraits du spectre d'enveloppe d'une fenêtre.
 
     Pour chaque raie F ∈ {BPFI, BPFO, BSF, FTF} :
@@ -33,7 +36,7 @@ def indicateurs_spectraux(x, fs, rpm, roulement="DE",
                   indépendante de l'amplitude absolue du signal)
     + f_pic : fréquence du pic dominant du spectre d'enveloppe sous 1 kHz.
     """
-    freqs, amp = spectre_enveloppe(x, fs)
+    freqs, amp = spectre_enveloppe(x, fs, sos=sos)
     fc = freqs_caracteristiques(roulement, rpm)
     res = {}
     for nom, f in fc.items():

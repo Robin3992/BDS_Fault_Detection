@@ -7,6 +7,7 @@ from sklearn.model_selection import StratifiedGroupKFold, GroupShuffleSplit
 
 from .config import DUREE_FENETRE, FEATURES
 from .indicateurs import indicateurs_spectraux, indicateurs_temporels
+from .signaux import creer_filtre
 
 
 def fenetrer(x, fs, duree=DUREE_FENETRE):
@@ -42,6 +43,42 @@ def construire_table(selection, charger, canaux=("DE",)):
                                table["defaut"] + table["diametre_mils"].astype(str).str.zfill(3))
     return table
 
+def construire_table2(selection, charger, canaux=None):
+    """Construit la table des indicateurs : une ligne par (fichier, fenêtre, canal).
+
+    canaux : None = lu depuis la colonne "canaux" de `selection` (ajoutée par
+             data.selectionner), sinon ("DE",) par défaut si absent.
+             Ex. ("DE", "FE") pour l'analyse transverse.
+    ...
+    """
+    if canaux is None:
+        if "canaux" in selection.columns:
+            canaux = tuple(selection["canaux"].iloc[0])
+        else:
+            canaux = ("DE",)
+    lignes = []
+
+    sos_cache = {}
+    for nom, info in selection.iterrows():
+        s = charger(nom)
+        fs, rpm = s["fs"], s["rpm"]
+        if fs not in sos_cache:
+            sos_cache[fs] = creer_filtre(fs)      # ← UNE FOIS, pas 50x
+        sos = sos_cache[fs]
+        for canal in canaux:
+            # roulement = canal if canal in ("DE", "FE") else "DE"
+            roulement = "FE" if "FE" in nom else "DE"   # selon le FICHIER, pas le canal !
+            x = s[canal]
+            for i, w in enumerate(fenetrer(x, fs)):
+                res = {"fichier": nom, "fenetre": i, "rpm": rpm, "canal": canal,
+                       **info.to_dict()}
+                res.update(indicateurs_temporels(w))
+                res.update(indicateurs_spectraux(w, fs, rpm, roulement=roulement, sos=sos))
+                lignes.append(res)
+    table = pd.DataFrame(lignes)
+    table["classe"] = np.where(table["defaut"] == "Sain", "Sain",
+                               table["defaut"] + table["diametre_mils"].astype(str).str.zfill(3))
+    return table
 
 def sauvegarder_table(table, nom_fichier="table_indicateurs.csv"):
     """Écrit la table dans data/features/ (dossier créé si besoin)."""

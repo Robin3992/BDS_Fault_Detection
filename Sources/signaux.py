@@ -28,11 +28,21 @@ def spectre_fft(x, fs, n_fft=None):
     return freqs, amp
 
 
-def filtrer_passe_bande(x, fs, bande=BANDE_RESONANCE, ordre=4):
-    """Filtre Butterworth passe-bande, filtrage zero-phase (sosfiltfilt) :
-    les chocs ne sont pas décalés dans le temps."""
-    sos = sci.butter(ordre, [bande[0] / (fs / 2), bande[1] / (fs / 2)],
-                     btype="bandpass", output="sos")
+# def filtrer_passe_bande(x, fs, bande=BANDE_RESONANCE, ordre=4):
+#     """Filtre Butterworth passe-bande, filtrage zero-phase (sosfiltfilt) :
+#     les chocs ne sont pas décalés dans le temps."""
+#     sos = sci.butter(ordre, [bande[0] / (fs / 2), bande[1] / (fs / 2)],
+#                      btype="bandpass", output="sos")
+#     return sci.sosfiltfilt(sos, x)
+
+def creer_filtre(fs, bande=BANDE_RESONANCE, ordre=4):
+    """Crée le filtre passe-bande (SOS) UNE FOIS pour toutes les fenêtres."""
+    return sci.butter(ordre, [bande[0]/(fs/2), bande[1]/(fs/2)],
+                      btype="bandpass", output="sos")
+
+def filtrer_passe_bande(x, fs, bande=BANDE_RESONANCE, ordre=4, sos=None):
+    if sos is None:
+        sos = creer_filtre(fs, bande, ordre)
     return sci.sosfiltfilt(sos, x)
 
 
@@ -42,10 +52,10 @@ def extraire_enveloppe(x):
     return env - np.mean(env)
 
 
-def spectre_enveloppe(x, fs, bande=BANDE_RESONANCE, n_fft=N_FFT):
+def spectre_enveloppe(x, fs, bande=BANDE_RESONANCE, n_fft=N_FFT, sos=None):
     """Chaîne complète d'analyse d'enveloppe : passe-bande + Hilbert + FFT.
     Renvoie (fréquences, amplitudes) du spectre de l'enveloppe."""
-    env = extraire_enveloppe(filtrer_passe_bande(x, fs, bande))
+    env = extraire_enveloppe(filtrer_passe_bande(x, fs, bande, sos=sos))
     fenetre = np.hanning(len(env))
     freqs = np.fft.rfftfreq(n_fft, d=1 / fs)
     amp = np.abs(np.fft.rfft(env * fenetre, n=n_fft)) / np.sum(fenetre) * 2

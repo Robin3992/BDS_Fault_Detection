@@ -160,3 +160,64 @@ def selectionner(sources=("12kDE",), defauts=("IR", "B", "OR"),
     if avec_sains:
         masque = masque | (est_sain & catalogue["charge_hp"].isin(charges or [0, 1, 2, 3]))
     return catalogue[masque]
+
+
+
+def selectionner2(sources=("12kDE", "Normal"), defauts=("IR", "B", "OR"),
+                 diametres=(7, 14, 21), positions_or=("6",),
+                 charges=(0, 1, 2, 3), canaux=("DE",)):
+    """Sélection de fichiers du catalogue, critère par critère.
+
+    Chaque critère accepte une valeur unique ou un tuple de valeurs ;
+    None désactive le filtre (toutes les valeurs sont conservées).
+
+    Paramètres (défaut = plan factoriel 12 kHz côté moteur + sains, 40 fichiers) :
+      sources      : défaut ("12kDE", "Normal"). "Normal"/"Sain" = les 4 fichiers
+                     sains (remplace l'ancien avec_sains). Autres : "12kFE", "48kDE"
+      defauts      : ex. ("IR", "B", "OR") ; None = tous les défauts
+      diametres    : ex. (7, 14, 21) en millièmes de pouce ; None = tous
+      positions_or : ex. ("6",) ; None = toutes les positions (3 h, 6 h, 12 h)
+      charges      : ex. (0, 1, 2, 3) en HP ; None = toutes les charges
+      canaux       : ex. ("DE",), ("DE", "FE"), "BA" — canal(x) lu(s) dans chaque
+                     fichier (un .mat contient DE, FE et BA)
+
+    Renvoie le catalogue filtré (même format qu'avant) + colonne "canaux" (tuple).
+
+    Exemples :
+      selectionner()                                     # plan du rapport (40 fichiers, DE)
+      selectionner(sources=(\"12kDE\", \"12kFE\", \"Normal\")) # transverse DE+FE+sains
+      selectionner(sources=\"Normal\")                     # 4 fichiers sains seuls
+      selectionner(sources=(\"12kDE\",))                   # défauts seuls, sans sains
+      selectionner(canaux=(\"DE\", \"FE\"))                  # 2 canaux par fichier
+    """
+    sources = _en_liste(sources)
+    defauts = _en_liste(defauts)
+    diametres = _en_liste(diametres)
+    positions_or = _en_liste(positions_or)
+    charges = _en_liste(charges)
+    canaux = _en_liste(canaux)
+    for c in canaux:
+        assert c in ("DE", "FE", "BA"), f"canal inconnu : {c!r} (attendu DE/FE/BA)"
+
+    # "Normal"/"Sain" dans sources -> source "Normal" du catalogue
+    sources_norm = ["Normal" if str(src).lower() in ("normal", "sain") else src
+                    for src in sources]
+    avec_normal = "Normal" in sources_norm
+
+    est_cible = catalogue["source"].isin(sources_norm)
+    est_sain = catalogue["source"] == "Normal"
+    masque = est_cible | (est_sain & avec_normal)
+
+    if defauts is not None:
+        masque = masque & (catalogue["defaut"].isin(defauts) | est_sain)
+    if diametres is not None:
+        masque = masque & (catalogue["diametre_mils"].isin(diametres) | est_sain)
+    if positions_or is not None:
+        masque = masque & ((catalogue["position_OR"].isin(positions_or)
+                            | catalogue["position_OR"].isna()) | est_sain)
+    if charges is not None:
+        masque = masque & catalogue["charge_hp"].isin(charges)
+
+    selection = catalogue[masque].copy()
+    selection["canaux"] = [tuple(canaux)] * len(selection)
+    return selection
