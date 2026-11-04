@@ -16,62 +16,32 @@ def fenetrer(x, fs, duree=DUREE_FENETRE):
     taille = int(duree * fs)
     return [x[i * taille:(i + 1) * taille] for i in range(len(x) // taille)]
 
-
-def construire_table(selection, charger, canaux=("DE",)):
+def construire_table(selection, charger, canaux=None):
     """Construit la table des indicateurs : une ligne par (fichier, fenêtre, canal).
 
-    canaux : ("DE",) par défaut ; ("DE", "FE") pour l'analyse transverse.
-    La colonne `canal` identifie le capteur, et `roulement` est déduit du canal
-    pour les fréquences caractéristiques (DE→6205, FE→6203).
+    canaux : None = lu depuis la colonne "canaux" de `selection`, LIGNE PAR LIGNE
+             (remplie par data.selectionner2, éventuellement via un dict
+             {source: canaux}) ; sinon tuple/str de canaux identiques pour tous.
     """
     lignes = []
-    for nom, info in selection.iterrows():
-        s = charger(nom)
-        fs, rpm = s["fs"], s["rpm"]
-        for canal in canaux:
-            # roulement = canal if canal in ("DE", "FE") else "DE"
-            roulement = "FE" if "FE" in nom else "DE"   # selon le FICHIER, pas le canal !
-            x = s[canal]
-            for i, w in enumerate(fenetrer(x, fs)):
-                res = {"fichier": nom, "fenetre": i, "rpm": rpm, "canal": canal,
-                       **info.to_dict()}
-                res.update(indicateurs_temporels(w))
-                res.update(indicateurs_spectraux(w, fs, rpm, roulement=roulement))
-                lignes.append(res)
-    table = pd.DataFrame(lignes)
-    table["classe"] = np.where(table["defaut"] == "Sain", "Sain",
-                               table["defaut"] + table["diametre_mils"].astype(str).str.zfill(3))
-    return table
-
-def construire_table2(selection, charger, canaux=None):
-    """Construit la table des indicateurs : une ligne par (fichier, fenêtre, canal).
-
-    canaux : None = lu depuis la colonne "canaux" de `selection` (ajoutée par
-             data.selectionner), sinon ("DE",) par défaut si absent.
-             Ex. ("DE", "FE") pour l'analyse transverse.
-    ...
-    """
-    if canaux is None:
-        if "canaux" in selection.columns:
-            canaux = tuple(selection["canaux"].iloc[0])
-        else:
-            canaux = ("DE",)
-    lignes = []
-
     sos_cache = {}
     for nom, info in selection.iterrows():
-        s = charger(nom)
+        liste = (info["canaux"] if "canaux" in selection.columns else None) if canaux is None else canaux
+        if liste is None:
+            liste = ("DE",)
+        if isinstance(liste, str):
+            liste = (liste,)
+        s = charger(nom, canaux=liste)          # ← ne charge que les canaux utiles
         fs, rpm = s["fs"], s["rpm"]
         if fs not in sos_cache:
-            sos_cache[fs] = creer_filtre(fs)      # ← UNE FOIS, pas 50x
+            sos_cache[fs] = creer_filtre(fs)
         sos = sos_cache[fs]
-        for canal in canaux:
-            # roulement = canal if canal in ("DE", "FE") else "DE"
-            roulement = "FE" if "FE" in nom else "DE"   # selon le FICHIER, pas le canal !
+        for canal in liste:                     # ← canaux de CE fichier
+            roulement = "FE" if "FE" in nom else "DE"   # selon le FICHIER, pas le canal
             x = s[canal]
             for i, w in enumerate(fenetrer(x, fs)):
                 res = {"fichier": nom, "fenetre": i, "rpm": rpm, "canal": canal,
-                       **info.to_dict()}
+                       **{k: v for k, v in info.to_dict().items() if k != "canaux"}}
                 res.update(indicateurs_temporels(w))
                 res.update(indicateurs_spectraux(w, fs, rpm, roulement=roulement, sos=sos))
                 lignes.append(res)
@@ -88,13 +58,13 @@ def sauvegarder_table(table, nom_fichier="table_indicateurs.csv"):
     return chemin
 
 
-def preparer_modeling(table, features, test_size=0.25, seed=42, strat=True):
+def preparer_modeling(table, features, test_size=0.25, seed=42, strat=True, target="classe"):
     """Sépare par FICHIER et standardise sur le train uniquement.
 
     strat=True  (défaut) : StratifiedGroupKFold — chaque classe garantie dans le test. Recommandé.
     strat=False          : GroupShuffleSplit — split aléatoire simple par fichier.
     """
-    X, y, groupes = table[features], table["classe"], table["fichier"]
+    X, y, groupes = table[features], table[target], table["fichier"]
 
     if strat:
         n_splits = round(1 / test_size)
