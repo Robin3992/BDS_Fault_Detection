@@ -18,6 +18,11 @@ N_FFT = 2 ** 14                # zero-padding des spectres
 HARMONIQUES = (1, 2, 3)        # harmoniques relevées par raie caractéristique
 DEMI_BANDE = 5.0               # Hz, = résolution FFT d'une fenêtre de 0,2 s
 
+# Indicateurs "rapport signal/bruit" (spectre d'enveloppe, bande 2-5 kHz)
+BANDE_SNR = (2000, 5000)       # Hz, bande de résonance de la méthode SNR
+BANDE_FOND = (10, 1000)        # Hz, bande de calcul du niveau de fond du spectre d'enveloppe
+RAIES_SNR = ("BPFI", "BPFO", "BSF")  # raies retenues pour les indicateurs SNR (sans FTF)
+
 # Coefficients × fréquence de rotation (source CWRU)
 COEFF_FREQ = {
     "DE": {"BPFI": 5.4152, "BPFO": 3.5848, "BSF": 4.7135, "FTF": 0.39828},

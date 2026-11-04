@@ -7,7 +7,7 @@ import numpy as np
 import scipy.signal as sci
 from scipy.signal import hilbert
 
-from .config import BANDE_RESONANCE, COEFF_FREQ, N_FFT
+from .config import BANDE_RESONANCE, BANDE_SNR, COEFF_FREQ, N_FFT
 
 
 def freqs_caracteristiques(roulement, rpm):
@@ -50,6 +50,17 @@ def extraire_enveloppe(x):
     """Enveloppe par transformée de Hilbert, centrée (retire le pic à 0 Hz)."""
     env = np.abs(hilbert(x))
     return env - np.mean(env)
+
+
+def enveloppe_bande(x, fs, bande=BANDE_SNR, ordre=4, sos=None):
+    """Filtre passe-bande puis enveloppe (module du signal analytique) appliqués
+    au signal ENTIER, une fois par fichier : renvoie (x_filtre, enveloppe),
+    à découper ensuite fenêtre par fenêtre."""
+    if sos is None:
+        sos = creer_filtre(fs, bande, ordre)
+    x_filt = sci.sosfiltfilt(sos, x)
+    env = np.abs(hilbert(x_filt))
+    return x_filt, env
 
 
 def spectre_enveloppe(x, fs, bande=BANDE_RESONANCE, n_fft=N_FFT, sos=None):

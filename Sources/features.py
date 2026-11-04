@@ -5,9 +5,9 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import StratifiedGroupKFold, GroupShuffleSplit
 
 
-from .config import DUREE_FENETRE, FEATURES
-from .indicateurs import indicateurs_spectraux, indicateurs_temporels
-from .signaux import creer_filtre
+from .config import BANDE_SNR, DUREE_FENETRE, FEATURES
+from .indicateurs import indicateurs_spectraux, indicateurs_spectraux_snr, indicateurs_temporels
+from .signaux import creer_filtre, enveloppe_bande
 
 
 def fenetrer(x, fs, duree=DUREE_FENETRE):
@@ -16,15 +16,19 @@ def fenetrer(x, fs, duree=DUREE_FENETRE):
     taille = int(duree * fs)
     return [x[i * taille:(i + 1) * taille] for i in range(len(x) // taille)]
 
-def construire_table(selection, charger, canaux=None):
+def construire_table(selection, charger, canaux=None, avec_snr=False):
     """Construit la table des indicateurs : une ligne par (fichier, fenêtre, canal).
 
     canaux : None = lu depuis la colonne "canaux" de `selection`, LIGNE PAR LIGNE
              (remplie par data.selectionner2, éventuellement via un dict
              {source: canaux}) ; sinon tuple/str de canaux identiques pour tous.
+    avec_snr : True = ajoute les indicateurs signal/bruit Env_BPFI/Env_BPFO/Env_BSF
+             et RMS_bande (méthode 2-5 kHz : filtrage + enveloppe calculés une
+             fois sur le fichier entier, puis découpés par fenêtre).
     """
     lignes = []
     sos_cache = {}
+    sos_snr_cache = {}
     for nom, info in selection.iterrows():
         liste = (info["canaux"] if "canaux" in selection.columns else None) if canaux is None else canaux
         if liste is None:
@@ -36,14 +40,22 @@ def construire_table(selection, charger, canaux=None):
         if fs not in sos_cache:
             sos_cache[fs] = creer_filtre(fs)
         sos = sos_cache[fs]
+        if avec_snr and fs not in sos_snr_cache:
+            sos_snr_cache[fs] = creer_filtre(fs, bande=BANDE_SNR)
         for canal in liste:                     # ← canaux de CE fichier
             roulement = "FE" if "FE" in nom else "DE"   # selon le FICHIER, pas le canal
             x = s[canal]
+            if avec_snr:
+                x_filt, env = enveloppe_bande(x, fs, sos=sos_snr_cache[fs])
             for i, w in enumerate(fenetrer(x, fs)):
                 res = {"fichier": nom, "fenetre": i, "rpm": rpm, "canal": canal,
                        **{k: v for k, v in info.to_dict().items() if k != "canaux"}}
                 res.update(indicateurs_temporels(w))
                 res.update(indicateurs_spectraux(w, fs, rpm, roulement=roulement, sos=sos))
+                if avec_snr:
+                    sl = slice(i * len(w), (i + 1) * len(w))
+                    res.update(indicateurs_spectraux_snr(x_filt[sl], env[sl], fs, rpm,
+                                                         roulement=roulement))
                 lignes.append(res)
     table = pd.DataFrame(lignes)
     table["classe"] = np.where(table["defaut"] == "Sain", "Sain",
