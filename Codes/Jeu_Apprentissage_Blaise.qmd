@@ -1,7 +1,18 @@
-Introduction Ce document présente: \* la création du jeu d'apprentissage. \* l'apprentissage automatique (AutoML) pour la dectection de défauts avec RMS et Kurtosis
+Introduction Ce document présente: 
+
+\* la création des jeux d'apprentissages. 
+
+\* l'apprentissage automatique (AutoML) pour la dectection de défauts avec RMS et Kurtosis
+
+
+
+
 
 ```{python}
-# Votre code Python ici
+# JEU APPRENTISSAGE CLASSE 1 OU 0 
+# X_sans_B : variables d'entrée (RMS, Pic, Crete, Kurtosis)
+# y_sans_B : variable de sortie (Failure = 1 ou 0)
+
 import pandas as pd
 import numpy as np
 
@@ -86,7 +97,47 @@ display(y_sans_B.head())
 
 ```
 
-Modèle d'apprentissage automatique (AutoML)
+
+```{python}
+# JEU APPRENTISSAGE DEFAUT CLASSES _DEFAUT
+
+table_indicateurs_classe= pd.read_csv(r"C:\Users\ReMarkt\Documents\0_PROJET_SCIENTIST\GitHub\BDS_Fault_Detection\data\features\table_indicateurs.csv")
+
+
+display(table_indicateurs_classe.head())
+
+display(table_indicateurs_classe['defaut'].value_counts())
+
+
+# On supprime les colonnes inutiles pour l'apprentissage
+table_indicateurs_classe = table_indicateurs_classe.drop(["fichier", "fenetre", "rpm", "numero",	"source",	"fs", "position_OR", "diametre_mils",	"charge_hp", "rpm_nominal",	"classe"
+], axis = 1)
+
+display(table_indicateurs_classe.head())
+
+# MELANGER LES DONNEES POUR L'APPRENTISSAGE
+
+# 2. Mélanger les lignes de manière aléatoire
+# - frac=1 : on garde 100% des données (toutes les lignes)
+# - random_state=42 : fixe la "graine" aléatoire pour que le mélange soit reproductible si vous rejouez le code
+table_indicateurs_classe_melange = table_indicateurs_classe.sample(frac=1, random_state=42).reset_index(drop=True)
+
+display(table_indicateurs_classe_melange.head(8))
+
+
+X_classe_defaut = table_indicateurs_classe_melange.drop("defaut", axis=1)
+print ("X_classe_defaut :")
+display(X_classe_defaut.head())
+
+y_classe_defaut = table_indicateurs_classe_melange["defaut"]
+print ("y_classe_defaut :")
+display(y_classe_defaut.head())
+
+
+
+```
+
+Modèle d'apprentissage automatique (RANDOM FOREST)
 
 ```{python}
 
@@ -157,7 +208,7 @@ for i, arbre in enumerate(rf.estimators_):
 
 ```
 
-
+## LOGISTIC REGRESSION POUR LA CLASSE DEFAUT
 ```{python}
 
 from sklearn.linear_model import LogisticRegression
@@ -166,6 +217,7 @@ from sklearn.linear_model import LogisticRegression
 # Séparation des données en ensembles d'entraînement et de test
 
 X_train, X_test, y_train, y_test = train_test_split (X_sans_B, y_sans_B, test_size =0.2, random_state=42)
+
 
 
 
@@ -217,6 +269,88 @@ print(df_coefficients.to_string(index=False))
 
 
 
+
+```
+
+
+
+
+
+
+
+
+## RANDOM FOREST POUR LA CLASSE DEFAUT
+
+
+```{python}
+
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import ConfusionMatrixDisplay
+import matplotlib.pyplot as plt
+
+
+# Séparation des données en ensembles d'entraînement et de test
+
+X_train, X_test, y_train, y_test = train_test_split (X_classe_defaut, y_classe_defaut, test_size =0.2, random_state=42)
+
+
+
+
+# Création et configuration du classificateur Random Forest
+
+rf = RandomForestClassifier(n_estimators=100, max_depth=4, random_state=42)
+rf.fit(X_train, y_train)
+
+y_pred = rf.predict(X_test)
+
+
+
+accuracy = np.round(accuracy_score(y_test, y_pred), 3)
+print(f"Précision du modèle : {accuracy}")
+
+
+
+# Affichage de la matrice de confusion
+cm = confusion_matrix(y_test, y_pred)
+
+classes = rf.classes_
+
+# Affichage
+disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=classes)
+disp.plot(cmap="Blues")
+
+plt.title(f"Matrice de confusion  & Accuracy  : {accuracy}")
+plt.show()
+
+# INTERPRETATION DES RESULTATS
+
+# 1. Récupérer l'importance calculée par le modèle
+importances = rf.feature_importances_
+
+# 2. Créer un DataFrame propre pour la lecture
+noms_variables = ["RMS", "Pic", "Crete", "Kurtosis"]
+df_importance = pd.DataFrame(
+    {"Indicateur": noms_variables, "Importance (%)": importances * 100}
+)
+
+# 3. Trier par ordre d'importance
+df_importance = df_importance.sort_values(
+    by="Importance (%)", ascending=False
+)
+print(df_importance.to_string(index=False))
+
+
+
+from sklearn.tree import export_text
+
+# Afficher les règles pour chacun des 4 arbres de la forêt
+for i, arbre in enumerate(rf.estimators_):
+    print(f"\n--- Structure de l'Arbre de décision n°{i+1} ---")
+    regles = export_text(arbre, feature_names=noms_variables)
+    print(regles)
 
 ```
 
