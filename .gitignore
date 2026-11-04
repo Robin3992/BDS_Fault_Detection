@@ -2,3 +2,9 @@
 .quarto/
 *_files/
 *.html
+.venv/
+data/CWRU_data/
+data/cwru_cache/
+data/features/
+Codes/*.pdf
+__pycache__/
