@@ -210,6 +210,8 @@ for i, arbre in enumerate(rf.estimators_):
 
 ## LOGISTIC REGRESSION POUR LA CLASSE DEFAUT
 ```{python}
+# LOGISTIC REGESSION POUR LA CLASSE DEFAUT  
+
 
 from sklearn.linear_model import LogisticRegression
 
@@ -279,8 +281,6 @@ print(df_coefficients.to_string(index=False))
 
 
 
-## RANDOM FOREST POUR LA CLASSE DEFAUT
-
 
 ```{python}
 
@@ -296,7 +296,15 @@ import matplotlib.pyplot as plt
 
 X_train, X_test, y_train, y_test = train_test_split (X_classe_defaut, y_classe_defaut, test_size =0.2, random_state=42)
 
+```
 
+
+
+
+## RANDOM FOREST POUR LA CLASSE DEFAUT
+
+
+```{python}
 
 
 # Création et configuration du classificateur Random Forest
@@ -355,4 +363,388 @@ for i, arbre in enumerate(rf.estimators_):
 ```
 
 
+
+```{python}
+# JEU APPRENTISSAGE DEFAUT CLASSES _DEFAUT
+
+import pandas as pd
+
+table_indicateurs_classe= pd.read_csv(r"C:\Users\ReMarkt\Documents\0_PROJET_SCIENTIST\GitHub\BDS_Fault_Detection\data\features\table_indicateurs.csv")
+
+
+display(table_indicateurs_classe.head())
+
+display(table_indicateurs_classe['defaut'].value_counts())
+
+
+# On supprime les colonnes inutiles pour l'apprentissage
+# On ne supprime pas fichier et fenetre car on va les utiliser pour le train_test_split stratifié par fichier   
+
+table_indicateurs_classe = table_indicateurs_classe.drop([ "rpm", "numero",	"source",	"fs", "position_OR", "diametre_mils",	"charge_hp", "rpm_nominal",	"classe"
+], axis = 1)
+
+```
+
+## FONCTION TRAIN TEST SPLIT POUR LA CLASSE DEFAUT   
+
+
+
+```{python}
+
+from sklearn.model_selection import StratifiedGroupKFold
+
+
+def F_TRAIN_TEST_SPLIT(table, colonne_cible="defaut", colonne_groupe="fichier", n_plis=4, graine=42):
+    """Sépare la table en train et test, en gardant chaque fichier d'un seul côté."""
+    fichiers_par_classe = table.groupby(colonne_cible)[colonne_groupe].nunique()
+    print("Fichiers par classe :")
+    print(fichiers_par_classe, "\n")
+
+    if fichiers_par_classe.min() < n_plis:
+        raise ValueError(
+            f"Il faut au moins {n_plis} fichiers par classe : réduis n_plis "
+            "ou regroupe les classes trop petites."
+        )
+
+    X = table.drop(columns=[colonne_cible, colonne_groupe])
+    y = table[colonne_cible]
+    groupes = table[colonne_groupe]
+
+    decoupage = StratifiedGroupKFold(n_splits=n_plis, shuffle=True, random_state=graine)
+    train, test = next(decoupage.split(X, y, groupes))
+
+    X_train, X_test = X.iloc[train], X.iloc[test]
+    y_train, y_test = y.iloc[train], y.iloc[test]
+    groupes_train, groupes_test = groupes.iloc[train], groupes.iloc[test]
+
+    print("Indicateurs utilisés :", list(X.columns))
+    print("Lignes train / test :", len(X_train), "/", len(X_test))
+    print("Fichiers train / test :", groupes_train.nunique(), "/", groupes_test.nunique())
+    print("Fichiers communs :", set(groupes_train) & set(groupes_test))
+    print("Classes dans le test :", y_test.value_counts().to_dict())
+
+    return X_train, X_test, y_train, y_test, groupes_train
+
+```
+
+
+
+
+
+
+
+
+## FONCTION RANDOM FOREST 
+
+
+
+
+```{python}
+## FONCTION RANDOM FOREST 
+
+
+
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import ConfusionMatrixDisplay, classification_report, f1_score
+from sklearn.model_selection import GridSearchCV, StratifiedGroupKFold
+
+
+def F_RANDOM_FOREST(X_train, X_test, y_train, y_test, groupes_train, n_plis=3, graine=42):
+    """Optimise une Random Forest et l'évalue sur X_test, y_test."""
+    grille = {
+        "max_depth": [None, 5, 10],
+        "min_samples_leaf": [1, 5, 10],
+        "max_features": ["sqrt", 2, 3],
+        "n_estimators": [100, 300, 500],
+    }
+
+    recherche = GridSearchCV(
+        RandomForestClassifier(class_weight="balanced", random_state=graine),
+        param_grid=grille,
+        scoring="f1_macro",
+        cv=StratifiedGroupKFold(n_splits=n_plis, shuffle=True, random_state=graine),
+        n_jobs=-1,
+    )
+    recherche.fit(X_train, y_train, groups=groupes_train)
+
+    meilleur_modele = recherche.best_estimator_
+    y_pred = meilleur_modele.predict(X_test)
+    f1_test = f1_score(y_test, y_pred, average="macro")
+
+    print("Meilleurs paramètres :", recherche.best_params_)
+    print(f"F1 macro en validation : {recherche.best_score_:.3f}")
+    print(f"F1 macro sur le test : {f1_test:.3f}\n")
+    print(classification_report(y_test, y_pred, zero_division=0))
+    ConfusionMatrixDisplay.from_predictions(y_test, y_pred, xticks_rotation=45)
+
+    return meilleur_modele, recherche.best_params_, f1_test
+
+
+
+
+
+
+
+```
+
+
+## FONCTION LOGISTIC REGRESSION
+
+
+```{python}
+
+## FONCTION LOGISTIC REGRESSION
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import ConfusionMatrixDisplay, classification_report, f1_score
+from sklearn.model_selection import GridSearchCV, StratifiedGroupKFold
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+
+
+def F_LOGISTIC_REGRESSION(X_train, X_test, y_train, y_test, groupes_train, n_plis=3, graine=42):
+    """Optimise une régression logistique et l'évalue sur X_test, y_test."""
+    grille = {"logisticregression__C": [0.01, 0.1, 1, 10, 100]}
+
+    pipeline = make_pipeline(
+        StandardScaler(),
+        LogisticRegression(class_weight="balanced", max_iter=5000, random_state=graine),
+    )
+
+    recherche = GridSearchCV(
+        pipeline,
+        param_grid=grille,
+        scoring="f1_macro",
+        cv=StratifiedGroupKFold(n_splits=n_plis, shuffle=True, random_state=graine),
+        n_jobs=-1,
+    )
+    recherche.fit(X_train, y_train, groups=groupes_train)
+
+    meilleur_modele = recherche.best_estimator_
+    y_pred = meilleur_modele.predict(X_test)
+    f1_test = f1_score(y_test, y_pred, average="macro")
+
+    print("Meilleurs paramètres :", recherche.best_params_)
+    print(f"F1 macro en validation : {recherche.best_score_:.3f}")
+    print(f"F1 macro sur le test : {f1_test:.3f}\n")
+    print(classification_report(y_test, y_pred, zero_division=0))
+    ConfusionMatrixDisplay.from_predictions(y_test, y_pred, xticks_rotation=45)
+
+    return meilleur_modele, recherche.best_params_, f1_test
+
+```
+
+
+## FONCTION SVM Noyau RBF
+
+```{python}
+
+## FONCTION SVM Noyau RBF
+
+from sklearn.metrics import ConfusionMatrixDisplay, classification_report, f1_score
+from sklearn.model_selection import GridSearchCV, StratifiedGroupKFold
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
+
+
+def F_SVM_noyau_RBF(X_train, X_test, y_train, y_test, groupes_train, n_plis=3, graine=42):
+    """Optimise un SVM à noyau RBF et l'évalue sur X_test, y_test."""
+    grille = {
+        "svc__C": [0.1, 1, 10, 100],
+        "svc__gamma": ["scale", 0.01, 0.1, 1],
+    }
+
+    pipeline = make_pipeline(
+        StandardScaler(),
+        SVC(kernel="rbf", class_weight="balanced", random_state=graine),
+    )
+
+    recherche = GridSearchCV(
+        pipeline,
+        param_grid=grille,
+        scoring="f1_macro",
+        cv=StratifiedGroupKFold(n_splits=n_plis, shuffle=True, random_state=graine),
+        n_jobs=-1,
+    )
+    recherche.fit(X_train, y_train, groups=groupes_train)
+
+    meilleur_modele = recherche.best_estimator_
+    y_pred = meilleur_modele.predict(X_test)
+    f1_test = f1_score(y_test, y_pred, average="macro")
+
+    print("Meilleurs paramètres :", recherche.best_params_)
+    print(f"F1 macro en validation : {recherche.best_score_:.3f}")
+    print(f"F1 macro sur le test : {f1_test:.3f}\n")
+    print(classification_report(y_test, y_pred, zero_division=0))
+    ConfusionMatrixDisplay.from_predictions(y_test, y_pred, xticks_rotation=45)
+
+    return meilleur_modele, recherche.best_params_, f1_test
+
+
+
+```
+
+
+
+## FONCTION GRADIENT_BOOSTING _ istGradientBoostingClassifier
+
+```{python}
+
+## FONCTION GRADIENT_BOOSTING _HistGradientBoostingClassifier
+
+from sklearn.ensemble import HistGradientBoostingClassifier
+from sklearn.metrics import ConfusionMatrixDisplay, classification_report, f1_score
+from sklearn.model_selection import GridSearchCV, StratifiedGroupKFold
+
+
+def F_GRADIENT_BOOSTING(X_train, X_test, y_train, y_test, groupes_train, n_plis=3, graine=42):
+    """Optimise un gradient boosting et l'évalue sur X_test, y_test."""
+    grille = {
+        "learning_rate": [0.03, 0.1, 0.3],
+        "max_iter": [100, 300],
+        "max_leaf_nodes": [7, 15, 31],
+        "min_samples_leaf": [10, 20, 50],
+    }
+
+    recherche = GridSearchCV(
+        HistGradientBoostingClassifier(
+            class_weight="balanced", early_stopping=False, random_state=graine
+        ),
+        param_grid=grille,
+        scoring="f1_macro",
+        cv=StratifiedGroupKFold(n_splits=n_plis, shuffle=True, random_state=graine),
+        n_jobs=-1,
+    )
+    recherche.fit(X_train, y_train, groups=groupes_train)
+
+    meilleur_modele = recherche.best_estimator_
+    y_pred = meilleur_modele.predict(X_test)
+    f1_test = f1_score(y_test, y_pred, average="macro")
+
+    print("Meilleurs paramètres :", recherche.best_params_)
+    print(f"F1 macro en validation : {recherche.best_score_:.3f}")
+    print(f"F1 macro sur le test : {f1_test:.3f}\n")
+    print(classification_report(y_test, y_pred, zero_division=0))
+    ConfusionMatrixDisplay.from_predictions(y_test, y_pred, xticks_rotation=45)
+
+    return meilleur_modele, recherche.best_params_, f1_test
+
+
+
+```
+
+
+## FONCTION K-NN  (K-Nearest Neighbors )
+
+```{python}
+
+## FONCTION K-NN  (K-Nearest Neighbors )
+
+from sklearn.metrics import ConfusionMatrixDisplay, classification_report, f1_score
+from sklearn.model_selection import GridSearchCV, StratifiedGroupKFold
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+
+
+def F_K_NN(X_train, X_test, y_train, y_test, groupes_train, n_plis=3, graine=42):
+    """Optimise un k-NN et l'évalue sur X_test, y_test."""
+    grille = {"kneighborsclassifier__n_neighbors": [3, 5, 11, 21]}
+
+    pipeline = make_pipeline(StandardScaler(), KNeighborsClassifier())
+
+    recherche = GridSearchCV(
+        pipeline,
+        param_grid=grille,
+        scoring="f1_macro",
+        cv=StratifiedGroupKFold(n_splits=n_plis, shuffle=True, random_state=graine),
+        n_jobs=-1,
+    )
+    recherche.fit(X_train, y_train, groups=groupes_train)
+
+    meilleur_modele = recherche.best_estimator_
+    y_pred = meilleur_modele.predict(X_test)
+    f1_test = f1_score(y_test, y_pred, average="macro")
+
+    print("Meilleurs paramètres :", recherche.best_params_)
+    print(f"F1 macro en validation : {recherche.best_score_:.3f}")
+    print(f"F1 macro sur le test : {f1_test:.3f}\n")
+    print(classification_report(y_test, y_pred, zero_division=0))
+    ConfusionMatrixDisplay.from_predictions(y_test, y_pred, xticks_rotation=45)
+
+    return meilleur_modele, recherche.best_params_, f1_test
+
+
+
+
+
+```
+
+
+
+APPEL DES FONCTIONS: 
+                     TRAIN TEST SPLIT 
+                     RANDOM FOREST POUR LA CLASSE DEFAUT
+
+
+
+```{python}
+#  appeler fonction TRAIN TEST SPLIT
+
+X_train, X_test, y_train, y_test, groupes_train = F_TRAIN_TEST_SPLIT(table_indicateurs_classe)
+
+```
+
+
+
+```{python}
+#  appeler fonction RANDOM FOREST
+
+modele_rf, params_rf, f1_rf = F_RANDOM_FOREST(
+    X_train, X_test, y_train, y_test, groupes_train
+)
+
+```
+
+
+```{python}
+#  appeler fonction LOGISTIC REGRESSION
+
+modele_lr, params_lr, f1_lr = F_LOGISTIC_REGRESSION(
+    X_train, X_test, y_train, y_test, groupes_train
+)
+
+```
+
+
+
+```{python}
+#  appeler fonction SVM Noyau RBF
+
+modele_svm, params_svm, f1_svm = F_SVM_noyau_RBF(
+    X_train, X_test, y_train, y_test, groupes_train
+)
+
+```
+
+
+
+```{python}
+#  appeler fonction GRADIENT_BOOSTING
+
+modele_gb, params_gb, f1_gb = F_GRADIENT_BOOSTING(
+    X_train, X_test, y_train, y_test, groupes_train
+)
+
+```
+
+```{python}
+#  appeler fonction K-NN ()
+
+modele_knn, params_knn, f1_knn = F_K_NN(
+    X_train, X_test, y_train, y_test, groupes_train
+)
+
+```
 
