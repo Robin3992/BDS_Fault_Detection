@@ -17,7 +17,7 @@ import pandas as pd
 import numpy as np
 
 
-table_indicateurs_failure = pd.read_csv(r"C:\Users\ReMarkt\Documents\0_PROJET_SCIENTIST\GitHub\BDS_Fault_Detection\data\features\table_indicateurs.csv")
+table_indicateurs_failure = pd.read_csv(r"..\data\features\table_indicateurs.csv")
 
 display(table_indicateurs_failure.head())
 
@@ -369,7 +369,7 @@ for i, arbre in enumerate(rf.estimators_):
 
 import pandas as pd
 
-table_indicateurs_classe= pd.read_csv(r"C:\Users\ReMarkt\Documents\0_PROJET_SCIENTIST\GitHub\BDS_Fault_Detection\data\features\table_indicateurs.csv")
+table_indicateurs_classe= pd.read_csv(r"..\data\features\table_indicateurs.csv")
 
 
 display(table_indicateurs_classe.head())
