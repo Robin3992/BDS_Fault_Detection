@@ -4,9 +4,13 @@ Introduction Ce document présente:
 
 \* l'apprentissage automatique (AutoML) pour la dectection de défauts avec RMS et Kurtosis
 
+```{python}
+display(table.head())
 
 
 
+
+```
 
 ```{python}
 # JEU APPRENTISSAGE CLASSE 1 OU 0 
@@ -369,13 +373,13 @@ for i, arbre in enumerate(rf.estimators_):
 
 import pandas as pd
 
-table_indicateurs_classe= pd.read_csv(r"..\data\features\table_indicateurs.csv")
+table_indicateurs= pd.read_csv(r"..\data\features\table_indicateurs.csv")
 
+print("table indicateurs temp & spectraux +  defaut & classe")
+display(table_indicateurs.head())
 
-display(table_indicateurs_classe.head())
-
-display(table_indicateurs_classe['defaut'].value_counts())
-
+display(table_indicateurs['defaut'].value_counts())
+display(table_indicateurs['classe'].value_counts())
 
 # On supprime les colonnes inutiles pour l'apprentissage
 # On ne supprime pas fichier et fenetre car on va les utiliser pour le train_test_split stratifié par fichier   
@@ -385,6 +389,18 @@ table_indicateurs_classe = table_indicateurs_classe.drop([ "fenetre", "rpm", "nu
 
 
 display(table_indicateurs_classe.head())
+
+
+
+print("table indicateurs temp spectraux classe")
+print("table indicateurs temp spectraux defaut")
+print("table indicateurs temp classe")
+print("table indicateurs temp defaut)
+print("table indicateurs RMS Kurtosis classe")
+print("table indicateurs RMS Kurtosis defaut)
+
+
+
 
 ```
 
