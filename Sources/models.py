@@ -77,8 +77,7 @@ def entrainer_comparer(modeles, X_train, y_train, X_test, y_test,
         if tracer:
             evaluer_modele(y_test, y_pred, classes=classes, titre=nom, report=report, dispMatrice=dispMatrice)
     return pd.DataFrame(lignes).round(3)
-            evaluer_modele(y_test, y_pred, classes=classes, titre=nom)
-    return pd.DataFrame(lignes).round(3)
+
 
 
 
