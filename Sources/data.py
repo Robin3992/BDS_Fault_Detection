@@ -76,11 +76,13 @@ def construire_catalogue():
 
 catalogue = construire_catalogue()
 
-
-def charger(nom):
-    """Renvoie {'DE', 'FE', 'BA', 'fs', 'rpm'} pour un fichier du catalogue
+def charger(nom, canaux=("DE", "FE", "BA")):
+    """Renvoie {canal: signal, 'fs', 'rpm'} pour un fichier du catalogue
     (ex. '12kDE_IR007_L0'). Télécharge le fichier la 1re fois, puis le
     relit en local (cache).
+
+    canaux : canal(x) à extraire du .mat — seuls ceux-là sont gardés
+            en mémoire (ex. charger(nom, canaux=("DE",)) pour le DE seul).
     """
     info = catalogue.loc[nom]
     numero = int(info["numero"])
@@ -97,8 +99,45 @@ def charger(nom):
         bonne = [k for k in cles if k.startswith(f"X{numero:03d}")]
         return (bonne or cles or [None])[0]
 
+    if isinstance(canaux, str):
+        canaux = (canaux,)
     signaux = {"fs": int(info["fs"])}
-    for canal in ["DE", "FE", "BA"]:
+    for canal in canaux:                        # ← seulement les canaux demandés
+        cle = choisir(f"_{canal}_time")
+        signaux[canal] = None if cle is None else np.ravel(mat[cle])
+    cle_rpm = choisir("RPM")
+    signaux["rpm"] = (float(np.squeeze(mat[cle_rpm])) if cle_rpm
+                      else float(info["rpm_nominal"]))
+    return signaux
+
+
+def charger(nom, canaux=("DE", "FE", "BA")):
+    """Renvoie {canal: signal, 'fs', 'rpm'} pour un fichier du catalogue
+    (ex. '12kDE_IR007_L0'). Télécharge le fichier la 1re fois, puis le
+    relit en local (cache).
+
+    canaux : canal(x) à extraire du .mat — seuls ceux-là sont gardés
+            en mémoire (ex. charger(nom, canaux=("DE",)) pour le DE seul).
+    """
+    info = catalogue.loc[nom]
+    numero = int(info["numero"])
+    chemin = CACHE / f"{nom}__{numero}.mat"     # ex. 12kDE_IR007_L0__105.mat
+
+    if not chemin.exists():                     # 1re fois : téléchargement
+        CACHE.mkdir(parents=True, exist_ok=True)
+        with urllib.request.urlopen(URL_CWRU + f"{numero}.mat") as reponse:
+            chemin.write_bytes(reponse.read())
+    mat = loadmat(chemin)
+
+    def choisir(suffixe):                       # privilégie la variable du bon numéro
+        cles = [k for k in mat if k.endswith(suffixe)]
+        bonne = [k for k in cles if k.startswith(f"X{numero:03d}")]
+        return (bonne or cles or [None])[0]
+
+    if isinstance(canaux, str):
+        canaux = (canaux,)
+    signaux = {"fs": int(info["fs"])}
+    for canal in canaux:                        # ← seulement les canaux demandés
         cle = choisir(f"_{canal}_time")
         signaux[canal] = None if cle is None else np.ravel(mat[cle])
     cle_rpm = choisir("RPM")
@@ -115,27 +154,32 @@ def _en_liste(valeur):
     return [valeur]
 
 
-def selectionner(sources=("12kDE",), defauts=("IR", "B", "OR"),
+def selectionner(sources=("12kDE", "Normal"), defauts=("IR", "B", "OR"),
                  diametres=(7, 14, 21), positions_or=("6",),
-                 charges=(0, 1, 2, 3), avec_sains=True):
+                 charges=(0, 1, 2, 3), canaux=("DE",)):
     """Sélection de fichiers du catalogue, critère par critère.
 
     Chaque critère accepte une valeur unique ou un tuple de valeurs ;
     None désactive le filtre (toutes les valeurs sont conservées).
 
-    Paramètres (défauts = plan factoriel 12 kHz côté moteur du rapport) :
-      sources      : ex. ("12kDE",), ("12kDE", "12kFE") ou "48kDE"
+    Paramètres (défaut = plan factoriel 12 kHz côté moteur + sains, 40 fichiers) :
+      sources      : défaut ("12kDE", "Normal"). "Normal"/"Sain" = les 4 fichiers
+                     sains (remplace l'ancien avec_sains). Autres : "12kFE", "48kDE"
       defauts      : ex. ("IR", "B", "OR") ; None = tous les défauts
       diametres    : ex. (7, 14, 21) en millièmes de pouce ; None = tous
       positions_or : ex. ("6",) ; None = toutes les positions (3 h, 6 h, 12 h)
       charges      : ex. (0, 1, 2, 3) en HP ; None = toutes les charges
-      avec_sains   : inclure les 4 enregistrements 'Normal' (source 'Normal')
+      canaux       : str / tuple identique pour toutes les sources ("DE", ("DE","FE"), "BA")
+                     OU dict {source: canaux} avec "*" = valeur par défaut :
+                     canaux={"12kDE": ("DE",), "12kFE": ("FE",), "*": ("DE", "FE")}
+
+    Renvoie le catalogue filtré (même format qu'avant) + colonne "canaux" (tuple),
+    remplie LIGNE PAR LIGNE quand canaux est un dict.
 
     Exemples :
-      selectionner()                                   # plan du rapport (40 fichiers)
-      selectionner(sources=("12kDE", "12kFE"))         # transverse DE + FE
-      selectionner(defauts=("IR",), diametres=7)       # bague int. 0,007" uniquement
-      selectionner(sources="12kDE", charges=(0, 1))    # 0 et 1 HP seulement
+      selectionner2()                                          # plan du rapport (40 fichiers, DE)
+      selectionner2(sources=("12kDE", "12kFE", "Normal"),
+                    canaux={"12kDE": "DE", "12kFE": "FE", "Normal": "DE"})
     """
     sources = _en_liste(sources)
     defauts = _en_liste(defauts)
@@ -143,20 +187,40 @@ def selectionner(sources=("12kDE",), defauts=("IR", "B", "OR"),
     positions_or = _en_liste(positions_or)
     charges = _en_liste(charges)
 
-    est_sain = catalogue["source"] == "Normal"
-    est_cible = catalogue["source"].isin(sources)
+    # "Normal"/"Sain" dans sources -> source "Normal" du catalogue
+    sources_norm = ["Normal" if str(src).lower() in ("normal", "sain") else src
+                    for src in sources]
+    avec_normal = "Normal" in sources_norm
 
-    masque = est_cible
+    est_cible = catalogue["source"].isin(sources_norm)
+    est_sain = catalogue["source"] == "Normal"
+    masque = est_cible | (est_sain & avec_normal)
+
     if defauts is not None:
-        masque = masque & catalogue["defaut"].isin(defauts)
+        masque = masque & (catalogue["defaut"].isin(defauts) | est_sain)
     if diametres is not None:
-        masque = masque & catalogue["diametre_mils"].isin(diametres)
+        masque = masque & (catalogue["diametre_mils"].isin(diametres) | est_sain)
     if positions_or is not None:
-        masque = masque & (catalogue["position_OR"].isin(positions_or)
-                           | catalogue["position_OR"].isna())
+        masque = masque & ((catalogue["position_OR"].isin(positions_or)
+                            | catalogue["position_OR"].isna()) | est_sain)
     if charges is not None:
         masque = masque & catalogue["charge_hp"].isin(charges)
 
-    if avec_sains:
-        masque = masque | (est_sain & catalogue["charge_hp"].isin(charges or [0, 1, 2, 3]))
-    return catalogue[masque]
+    selection = catalogue[masque].copy()
+
+    def _valide(c):
+        """Normalise un canal / tuple de canaux en tuple validé."""
+        c = tuple(_en_liste(c))
+        for x in c:
+            assert x in ("DE", "FE", "BA"), f"canal inconnu : {x!r} (attendu DE/FE/BA)"
+        return c
+
+    if isinstance(canaux, dict):
+        # canaux différents selon la source ; "*" = valeur par défaut
+        defaut = _valide(canaux.get("*", ("DE",)))
+        selection["canaux"] = [_valide(canaux.get(src, defaut))
+                               for src in selection["source"]]
+    else:
+        c = _valide(canaux)                     # tuple/str identique pour tous
+        selection["canaux"] = [c] * len(selection)
+    return selection
