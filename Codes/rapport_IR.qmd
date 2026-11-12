@@ -1263,5 +1263,178 @@ Markdown(tab.to_markdown(index=False))
 
 # Suite proposée
 
+1.  Avancer sur les questions relatives à la fréquence d'échantillonnage et la vitesse de rotation des échantillons
+2.  Créer des indicateurs sur base de l'analyse spectrale
+3.  Ajouter ces indicateurs dans le jeu de données d'apprentissage.
+4.  Définir les règles et seuils puis construire un premier modèle de référence
+5.  Améliorer le feature engineering et tester d'autres modèles plus complexes
+
+# Indicateurs fréquentiels
+
+## Principe
+
+Les indicateurs temporels mesurent l'énergie et l'impulsivité du signal,
+mais pas l'**origine** des chocs. Or chaque type de défaut produit des chocs
+à un rythme qui lui est propre, multiple de la vitesse de rotation :
+
+| Défaut | Fréquence | Multiplicateur | À 1797 tr/min |
+|:--|:--|--:|--:|
+| Bague intérieure | BPFI | 5,4152 | 162 Hz |
+| Bague extérieure | BPFO | 3,5848 | 107 Hz |
+| Bille | BSF | 4,7135 | 141 Hz |
+
+Pour retrouver ce rythme, on calcule le **spectre d'enveloppe** de chaque
+fenêtre : le signal est filtré dans la bande de résonance (2 à 5 kHz),
+on en extrait l'enveloppe, puis on mesure l'amplitude de son spectre aux
+trois premières harmoniques de chaque fréquence caractéristique. Cette
+amplitude est rapportée au niveau de bruit du spectre (rapport signal sur
+bruit), afin d'être comparable d'un enregistrement à l'autre.
+
+```{python}
+#| label: fonctions-spectrales
+from scipy.signal import butter, sosfiltfilt, hilbert
+
+COEF_DE = {"BPFI": 5.4152, "BPFO": 3.5848, "BSF": 4.7135}   # roulement SKF 6205
+BANDE = (2000, 5000)                                         # bande de résonance (Hz)
+
+def enveloppe(x, fs, bande=BANDE):
+    """Filtre passe-bande, puis enveloppe (module du signal analytique)."""
+    sos = butter(4, bande, btype="bandpass", fs=fs, output="sos")
+    x_filt = sosfiltfilt(sos, x)
+    env = np.abs(hilbert(x_filt))
+    return x_filt, env
+
+def indicateurs_spectraux(x_filt, env, fs, rpm):
+    """Indicateurs d'une fenêtre : énergie de la bande et rapports signal/bruit
+    du spectre d'enveloppe aux fréquences BPFI, BPFO et BSF."""
+    n = len(env)
+    amp = np.abs(np.fft.rfft(env - env.mean())) * 2 / n
+    freqs = np.fft.rfftfreq(n, d=1 / fs)
+    fond = np.median(amp[(freqs >= 10) & (freqs <= 1000)])   # niveau de bruit
+    f_rot = rpm / 60
+    res = {"RMS_bande": np.sqrt(np.mean(x_filt ** 2))}
+    for nom, coef in COEF_DE.items():
+        total = 0.0
+        for k in (1, 2, 3):                                   # 3 premières harmoniques
+            f = k * coef * f_rot
+            tol = max(0.02 * f, 1.5 * freqs[1])               # tolérance de ±2 %
+            total += amp[(freqs >= f - tol) & (freqs <= f + tol)].max()
+        res[f"Env_{nom}"] = total / fond
+    return res
+```
+
+## Calcul des indicateurs fréquentiels
+
+```{python}
+#| label: calcul-spectral
+lignes = []
+for nom in selection.index:
+    s = charger(nom)
+    x, fs, rpm = s["DE"], s["fs"], s["rpm"]
+    x_filt, env = enveloppe(x, fs)                     # une fois par fichier
+    taille = int(DUREE_FENETRE * fs)
+    for i in range(len(x) // taille):
+        sl = slice(i * taille, (i + 1) * taille)
+        res = {"fichier": nom, "fenetre": i}
+        res.update(indicateurs_spectraux(x_filt[sl], env[sl], fs, rpm))
+        lignes.append(res)
+
+spectre = pd.DataFrame(lignes)
+table = table.merge(spectre, on=["fichier", "fenetre"], how="left",
+                    validate="one_to_one")
+table.to_csv("../data/features/table_indicateurs.csv", index=False)
+```
+
+```{python}
+#| label: tbl-spectral
+#| tbl-cap: "Médiane des indicateurs fréquentiels par classe."
+med = table.groupby("classe")[["RMS_bande", "Env_BPFI", "Env_BPFO", "Env_BSF"]] \
+           .median().round(2).reindex(ORDRE)
+Markdown(med.reset_index().rename(columns={"classe": "Classe"})
+            .to_markdown(index=False))
+```
+
+L'énergie dans la bande de résonance (RMS_bande) distingue nettement tous
+les défauts du roulement sain, y compris le plus discret (OR014, quatre
+fois supérieur au sain, contre 1,4 fois pour le RMS global).
+
+Le spectre d'enveloppe identifie la localisation des défauts les plus
+marqués : la composante BPFI domine pour IR007 et IR021, la composante BPFO
+pour OR007 et OR021. Il ne fait en revanche pas ressortir les défauts
+faibles (OR014, IR014) ni les défauts de bille, dont aucun ne présente de
+signature à la fréquence BSF.
+
+Indicateurs temporels et fréquentiels apparaissent donc complémentaires.
+
+# Premier modèle de classification
+
+## Méthode
+
+On cherche à prédire la **localisation du défaut** (Sain, IR, B, OR) à partir
+des huit indicateurs temporels et fréquentiels. Le modèle est une forêt
+aléatoire, avec des poids de classes équilibrés pour compenser le nombre plus
+élevé de fenêtres saines.
+
+Pour éviter que le modèle reconnaisse simplement les enregistrements, la
+validation se fait **par charge** : le modèle est entraîné sur trois charges
+et évalué sur la quatrième, qu'il n'a jamais vue. L'opération est répétée
+pour chacune des quatre charges.
+
+
+```{python}
+#| label: tbl-validation-charge
+#| tbl-cap: "Exactitude du modèle pour chaque charge laissée de côté."
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, confusion_matrix
+
+VARIABLES = ["RMS", "Pic", "Crete", "Kurtosis",
+             "RMS_bande", "Env_BPFI", "Env_BPFO", "Env_BSF"]
+CIBLE = "defaut"
+ORDRE_LOC = ["Sain", "IR", "B", "OR"]
+
+scores, predictions = [], []
+for charge_test in range(4):
+    app  = table[table["charge_hp"] != charge_test]     # apprentissage : 3 charges
+    test = table[table["charge_hp"] == charge_test]     # test : la 4e charge
+    modele = RandomForestClassifier(n_estimators=300, class_weight="balanced",
+                                    random_state=0)
+    modele.fit(app[VARIABLES], app[CIBLE])
+    pred = modele.predict(test[VARIABLES])
+    scores.append({"Charge testée (HP)": charge_test,
+                   "Fenêtres testées": len(test),
+                   "Exactitude (%)": round(100 * accuracy_score(test[CIBLE], pred), 1)})
+    predictions.append(test.assign(prediction=pred))
+
+predictions = pd.concat(predictions)
+Markdown(pd.DataFrame(scores).to_markdown(index=False))
+```
+
+Le modèle classe correctement 97 à 99,8 % des fenêtres de la charge laissée
+de côté. Il est donc robuste à la charge, ce qui est cohérent avec le faible
+effet de la charge observé sur les indicateurs. Ce résultat doit cependant
+être interprété avec prudence : pour une classe donnée, les quatre charges
+ont été enregistrées sur le même roulement. Le modèle est donc testé sur un
+roulement qu'il a déjà vu, dans des conditions légèrement différentes, et
+non sur un roulement nouveau.
+
+```{python}
+#| label: tbl-confusion
+#| tbl-cap: "Matrice de confusion, toutes charges de test confondues (nombre de fenêtres)."
+mc = pd.DataFrame(confusion_matrix(predictions[CIBLE], predictions["prediction"],
+                                   labels=ORDRE_LOC),
+                  index=ORDRE_LOC, columns=ORDRE_LOC)
+mc.index.name = "Réel \\ Prédit"
+Markdown(mc.reset_index().to_markdown(index=False))
+```
+
+
+Le roulement sain est parfaitement reconnu (aucune fausse alarme ni aucun
+défaut manqué), de même que les défauts de bague intérieure (99,7 %). Les
+erreurs se concentrent sur la confusion entre défauts de bille et de bague
+extérieure (42 des 45 fenêtres mal classées), cohérente avec les
+observations précédentes : le fichier B021 présente une signature BPFO, et
+le défaut OR014, sans signature ni énergie marquée, ressemble aux défauts
+de bille.
+
 1.  Construire un premier modèle de référence
 2.  Améliorer le feature engineering et tester d'autres modèles plus complexes
