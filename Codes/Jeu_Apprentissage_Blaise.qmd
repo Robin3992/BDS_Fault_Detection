@@ -37,9 +37,16 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-CHEMIN_TABLE = r"..\data\features\table_DE.csv"            # puis "table_FE.csv"
-FEATURES     = ["RMS", "Pic", "Crete", "Kurtosis"]
+CHEMIN_TABLE = r"..\data\features\table_FE.csv"            # puis "table_FE.csv"
+
+# FEATURES     = ["RMS", "Pic", "Crete", "Kurtosis"]
+FEATURES = ["RMS",  "Kurtosis"]
+# FEATURES     = ["RMS", "Pic", "Crete", "Kurtosis", "RMS_bande",	"Env_BPFI",	"Env_BPFO",	"Env_BSF",	"Env_FTF"]
+print("Features utilisées :", FEATURES)
+
 CIBLE        = "defaut"                  # Sain / IR / B / OR
+# CIBLE        = "classe"                 # Sain, B007,	B014,	B021,	IR007,	IR014,	IR021,	OR007,	OR014,	OR021
+
 CLASSE_SAINE = "Sain"
 GRAINE       = 42
 N_PLIS       = 4                         # plis externes (évaluation)
@@ -106,8 +113,8 @@ def F_PROTOCOLES(table, n_plis=N_PLIS, graine=GRAINE):
     #  Or, les machines saines ont un diamètre de 0. 
     #  Si on les laissait à 0, toutes les données saines seraient isolées dans un seul pli de test, empêchant le modèle d'apprendre à quoi ressemble un fonctionnement normal.
 
-    #• .where(table["diametre_mils"] > 0, ...) : Garde la valeur du diamètre si la machine a un défaut (> 0).
-    #• table["charge_hp"].map(sain_vers_pli) : Si le diamètre est 0 (machine saine), remplace ce 0 par 7, 14 ou 21 selon la charge moteur (charge_hp). Les données saines sont ainsi réparties équitablement dans chaque pli.
+    # .where(table["diametre_mils"] > 0, ...) : Garde la valeur du diamètre si la machine a un défaut (> 0).
+    # table["charge_hp"].map(sain_vers_pli) : Si le diamètre est 0 (machine saine), remplace ce 0 par 7, 14 ou 21 selon la charge moteur (charge_hp). Les données saines sont ainsi réparties équitablement dans chaque pli.
 
     # dictionnaire 
     sain_vers_pli = {0: 7, 1: 14, 2: 21, 3: 7}
@@ -128,7 +135,7 @@ def F_PROTOCOLES(table, n_plis=N_PLIS, graine=GRAINE):
 
 ```{python}
 ## FONCTION TRAIN TEST SPLIT POUR LA CLASSE DEFAUT
-# Ne renvoie plus UN seul découpage : renvoie TOUS les plis du protocole,
+# renvoie TOUS les plis du protocole,  (Ne renvoie plus UN seul découpage train/test)
 # après contrôle (aucun fichier commun, toutes les classes présentes en test).
 
 def F_TRAIN_TEST_SPLIT(table, decoupage, groupes, colonne_cible=CIBLE, afficher=True):
@@ -136,6 +143,11 @@ def F_TRAIN_TEST_SPLIT(table, decoupage, groupes, colonne_cible=CIBLE, afficher=
     plis = list(decoupage.split(table, y, groupes))
     classes = set(y.unique())
 
+
+
+    # La boucle parcourt chaque pli numéroté à partir de 1 (enumerate(plis, 1)).
+    # f_train et f_test : Récupèrent la liste des noms de fichiers présents respectivement dans l'ensemble d'entraînement et dans l'ensemble de test, sans doublons (set).
+    # communs = f_train & f_test : Calcule l'intersection mathématique entre les deux ensembles pour trouver les fichiers qui apparaissent des deux côtés à la fois.
     lignes = []
     for k, (train, test) in enumerate(plis, 1):
         f_train = set(table["fichier"].iloc[train])
@@ -263,15 +275,20 @@ def F_K_NN(graine=GRAINE):
     grille = {"kneighborsclassifier__n_neighbors": [5, 11, 21, 51],
               "kneighborsclassifier__weights": ["uniform", "distance"]}
     return modele, grille
+```
 
+
+
+## FONCTION ÉVALUATION D'UN MODÈLE (VALIDATION CROISÉE IMBRIQUÉE)
+
+
+```{python}
 MODELES = {"Random Forest":         F_RANDOM_FOREST,
            "Régression logistique": F_LOGISTIC_REGRESSION,
            "SVM RBF":               F_SVM_NOYAU_RBF,
            "Gradient Boosting":     F_GRADIENT_BOOSTING,
            "k-NN":                  F_K_NN}
 ```
-
-## FONCTION ÉVALUATION D'UN MODÈLE (VALIDATION CROISÉE IMBRIQUÉE)
 
 ```{python}
 ## FONCTION ÉVALUATION D'UN MODÈLE (VALIDATION CROISÉE IMBRIQUÉE)
@@ -330,7 +347,7 @@ def F_EVALUER_MODELE(nom, F_MODELE, table, plis, groupes_internes,
         print("Défauts manqués par classe :")
         F_FNR(y, y_pred_oof)
         ConfusionMatrixDisplay.from_predictions(y, y_pred_oof, normalize="true",
-                                                values_format=".2f", cmap="Blues")
+                                                values_format=".3f", cmap="Blues")
         plt.title(f"{nom} — {titre}")
         plt.show()
 
@@ -372,6 +389,15 @@ def F_DEMARCHE_COMPLETE(chemin, modeles=MODELES, protocoles_detailles=("2. Group
     return resultats
 ```
 
+
+
+
+
+
+
+
+
+
 ## APPEL DES FONCTIONS : CAPTEUR DRIVE END (DE)
 
 ```{python}
@@ -382,7 +408,7 @@ resultats_DE
 ## APPEL DES FONCTIONS : CAPTEUR FAN END (FE)
 
 ```{python}
-resultats_FE = F_DEMARCHE_COMPLETE(r"..\data\features\  table_FE.csv")
+resultats_FE = F_DEMARCHE_COMPLETE(r"..\data\features\table_FE.csv")
 resultats_FE
 ```
 
@@ -473,13 +499,124 @@ comparaison
 
 
 
+## SÉLECTION DES MODÈLES À GARDER
 
+```{python}
+## SÉLECTION DES MODÈLES À GARDER
+# (nom affiché, fonction du modèle, protocole utilisé pour régler les hyperparamètres)
+SELECTION = [
+    ("SVM RBF — réglé leave-one-load-out",       F_SVM_NOYAU_RBF, "3. Leave-one-load-out"),
+    ("Random Forest — réglé leave-one-load-out", F_RANDOM_FOREST, "3. Leave-one-load-out"),
+    ("Random Forest — réglé groupé par fichier", F_RANDOM_FOREST, "2. Groupé par fichier"),
+]
+```
 
+## FONCTION ENTRAÎNEMENT FINAL SUR TOUTE LA TABLE
 
+```{python}
+## FONCTION ENTRAÎNEMENT FINAL SUR TOUTE LA TABLE
+# GridSearchCV avec refit=True : choisit les hyperparamètres avec le protocole demandé,
+# puis réentraîne automatiquement le meilleur modèle sur TOUTES les données d'entraînement.
+from sklearn.model_selection import GridSearchCV
 
+def F_ENTRAINER_FINAL(nom, F_MODELE, table, nom_protocole,
+                      features=FEATURES, colonne_cible=CIBLE, graine=GRAINE):
+    decoupage, groupes, _ = F_PROTOCOLES(table)[nom_protocole]
+    modele, grille = F_MODELE(graine)
 
+    recherche = GridSearchCV(modele, grille, scoring="f1_macro",
+                             cv=decoupage, refit=True, n_jobs=-1)
+    recherche.fit(table[features], table[colonne_cible], groups=groupes)
 
+    print(f"{nom}")
+    print(f"   hyperparamètres retenus : {recherche.best_params_}")
+    print(f"   F1 macro en validation ({nom_protocole}) : {recherche.best_score_:.3f}")
+    return recherche.best_estimator_
+```
 
+## FONCTION PRÉDICTION SUR UNE NOUVELLE TABLE
+
+```{python}
+## FONCTION PRÉDICTION SUR UNE NOUVELLE TABLE
+from sklearn.metrics import ConfusionMatrixDisplay, classification_report
+
+def F_PREDIRE_TABLE(nom, modele, table, features=FEATURES, colonne_cible=CIBLE,
+                    afficher=True, titre=""):
+    """Applique un modèle déjà entraîné (figé) à une table qu'il n'a jamais vue."""
+    y = table[colonne_cible]
+    y_pred = pd.Series(modele.predict(table[features]), index=table.index)
+
+    # Vote majoritaire par fichier
+    vote = (pd.DataFrame({"fichier": table["fichier"], "reel": y, "pred": y_pred})
+              .groupby("fichier")
+              .agg(reel=("reel", "first"), pred=("pred", lambda s: s.mode().iloc[0])))
+    exactitude_fichiers = (vote["reel"] == vote["pred"]).mean()
+
+    if afficher:
+        print(f"\n=== {nom} — {titre} ===")
+        print(classification_report(y, y_pred, zero_division=0))
+        print(f"Exactitude par fichier : {exactitude_fichiers:.3f} "
+              f"({(vote['reel'] == vote['pred']).sum()}/{len(vote)})")
+        print("Défauts manqués par classe :")
+        F_FNR(y, y_pred)
+        ConfusionMatrixDisplay.from_predictions(y, y_pred, normalize="true",
+                                                values_format=".3f", cmap="Blues")
+        plt.title(f"{nom}\n{titre}")
+        plt.show()
+
+    resume = {"Modèle": nom, **{k: round(v, 3) for k, v in F_SCORES(y, y_pred).items()}}
+    resume["Exactitude fichiers"] = round(exactitude_fichiers, 3)
+    return resume, y_pred
+```
+
+## FONCTION TRANSFERT : ENTRAÎNER SUR UN CAPTEUR, PRÉDIRE SUR L'AUTRE
+
+```{python}
+## FONCTION TRANSFERT : ENTRAÎNER SUR UN CAPTEUR, PRÉDIRE SUR L'AUTRE
+
+def F_TRANSFERT(chemin_train, chemin_test, selection=SELECTION,
+                features=FEATURES, colonne_cible=CIBLE):
+    table_train = F_CHARGER_TABLE(chemin_train, features, colonne_cible)
+    table_test  = F_CHARGER_TABLE(chemin_test,  features, colonne_cible)
+
+    classes_inconnues = set(table_test[colonne_cible]) - set(table_train[colonne_cible])
+    if classes_inconnues:
+        print(f"Attention : classes du test absentes de l'entraînement : {classes_inconnues}")
+
+    print("\n--- Entraînement final ---")
+    modeles = {nom: F_ENTRAINER_FINAL(nom, F_MODELE, table_train, protocole, features, colonne_cible)
+               for nom, F_MODELE, protocole in selection}
+
+    print("\n--- Prédiction sur la table de test ---")
+    titre = f"entraîné sur {Path(chemin_train).name}, testé sur {Path(chemin_test).name}"
+    resultats = [F_PREDIRE_TABLE(nom, modele, table_test, features, colonne_cible, titre=titre)[0]
+                 for nom, modele in modeles.items()]
+
+    resultats = pd.DataFrame(resultats).set_index("Modèle")
+    display(resultats)
+    return modeles, resultats
+```
+
+## APPEL : ENTRAÎNEMENT SUR DE, PRÉDICTION SUR FE
+
+```{python}
+from pathlib import Path
+
+modeles_DE, resultats_DE_vers_FE = F_TRANSFERT(r"..\data\features\table_DE.csv", r"..\data\features\table_FE.csv")
+
+#modeles_DE, resultats_DE_vers_FE = F_TRANSFERT(DOSSIER / "table_DE.csv", DOSSIER / "table_FE.csv")
+```
+
+## (OPTIONNEL) SAUVEGARDER LES MODÈLES ENTRAÎNÉS
+
+```{python}
+import joblib
+# Un fichier par modèle, ex. : modele_DE_1.joblib, modele_DE_2.joblib, ...
+for k, (nom, modele) in enumerate(modeles_DE.items(), 1):
+    joblib.dump(modele, DOSSIER / f"modele_DE_{k}.joblib")
+    print(f"modele_DE_{k}.joblib  <-  {nom}")
+# Pour recharger plus tard : modele = joblib.load(DOSSIER / "modele_DE_1.joblib")
+```
 
 
 
@@ -565,6 +702,76 @@ Gradient Boosting (XGBoost / LightGBM)	Généralement le plus performant sur don
 6.	Analyse des erreurs : quelles classes sont confondues (défauts de bille attendus).
 8.5 Livrables
 Tableau comparatif des modèles par tâche et protocole de validation ; meilleur modèle classique retenu comme référence pour le Deep Learning.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
