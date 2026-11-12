@@ -5,404 +5,572 @@ Introduction Ce document présente:
 \* l'apprentissage automatique (AutoML) pour la dectection de défauts avec RMS et Kurtosis
 
 ```{python}
-display(table.head())
 
-
-
-
-```
-
-```{python}
-# JEU APPRENTISSAGE CLASSE 1 OU 0 
-# X_sans_B : variables d'entrée (RMS, Pic, Crete, Kurtosis)
-# y_sans_B : variable de sortie (Failure = 1 ou 0)
+# import des données (A remplacer si fonction Robin OK )
 
 import pandas as pd
 import numpy as np
 
 
-table_indicateurs_failure = pd.read_csv(r"..\data\features\table_indicateurs.csv")
+table_DE_FE = pd.read_csv(r"..\data\features\table.csv")
 
-display(table_indicateurs_failure.head())
+table_DE_FE.head(5)
+table_DE_FE.info()
 
+table_DE = table_DE_FE[table_DE_FE["canal"] == "DE"]
+table_FE = table_DE_FE[table_DE_FE["canal"] == "FE"]
 
-# Si df['Classe'] est égal à "sains", on met 0, sinon 1
-table_indicateurs_failure["Failure"] = np.where(table_indicateurs_failure["classe"] == "Sain", 0, 1)
-
-display(table_indicateurs_failure.head())
-
-# Séparation du fichier sans défaut billes et avec défaut billes
-# On ne garde que les lignes où le défaut est différent de "B"
-table_indicateurs_failure_sans_B = table_indicateurs_failure[table_indicateurs_failure["defaut"] != "B"]
-
-print("comptage valeurs defaut de table_indicateurs_failure_sans_B :")
- 
-display(table_indicateurs_failure_sans_B["defaut"].value_counts())
-
-# On supprime les colonnes inutiles pour l'apprentissage
-table_indicateurs_failure_sans_B = table_indicateurs_failure_sans_B.drop(["fichier", "fenetre", "rpm", "numero",	"source",	"fs",	"defaut", "position_OR", "diametre_mils",	"charge_hp", "rpm_nominal",	"classe"
-], axis = 1)
-
-display(table_indicateurs_failure_sans_B.head())
-
-display(table_indicateurs_failure_sans_B.describe())
-
-display(table_indicateurs_failure_sans_B["Failure"].value_counts())
-
-
-
-# EQUILIBRAGE DES CLASSES "Failure" POUR L'APPRENTISSAGE
-
-# 1. Identifier les indices des lignes qui respectent la condition
-indices_failure = table_indicateurs_failure_sans_B[
-    table_indicateurs_failure_sans_B["Failure"] == 1
-].index
-
-# 2. Échantillonner au hasard (et sans remise) exactement 5/12ème de ces indices
-# (Le paramètre random_state assure que la suppression reste identique à chaque exécution)
-indices_a_supprimer = indices_failure.to_series().sample(
-    frac=5 / 12, random_state=42
-)
-
-# 3. Supprimer ces lignes du DataFrame d'origine
-table_indicateurs_failure_sans_B = table_indicateurs_failure_sans_B.drop(
-    indices_a_supprimer
-)
-
-display(table_indicateurs_failure_sans_B["Failure"].value_counts())
-
-
-
-# MELANGER LES DONNEES POUR L'APPRENTISSAGE
-
-# 2. Mélanger les lignes de manière aléatoire
-# - frac=1 : on garde 100% des données (toutes les lignes)
-# - random_state=42 : fixe la "graine" aléatoire pour que le mélange soit reproductible si vous rejouez le code
-table_indicateurs_failure_sans_B_melange = table_indicateurs_failure_sans_B.sample(frac=1, random_state=42).reset_index(drop=True)
-
-display(table_indicateurs_failure_sans_B_melange.head(8))
-
-
-
-# 3. Sauvegarder le nouveau fichier mélangé pour l'AutoML
-table_indicateurs_failure_sans_B_melange.to_csv('table_indicateurs_failure_sans_B_melange.csv', index=False)
-
-print("Le fichier a été mélangé avec succès et sauvegardé sous 'table_indicateurs_failure_sans_B_melange.csv' !")
-
-
-X_sans_B = table_indicateurs_failure_sans_B_melange.drop("Failure", axis=1)
-print ("X_sans_B :")
-display(X_sans_B.head())
-
-y_sans_B = table_indicateurs_failure_sans_B_melange["Failure"]
-print ("y_sans_B :")
-display(y_sans_B.head())
-
+table_DE.to_csv(r"..\data\features\table_DE.csv", index=False)
+table_FE.to_csv(r"..\data\features\table_FE.csv", index=False)
 
 ```
 
 
-```{python}
-# JEU APPRENTISSAGE DEFAUT CLASSES _DEFAUT
 
-table_indicateurs_classe= pd.read_csv(r"C:\Users\ReMarkt\Documents\0_PROJET_SCIENTIST\GitHub\BDS_Fault_Detection\data\features\table_indicateurs.csv")
-
-
-display(table_indicateurs_classe.head())
-
-display(table_indicateurs_classe['defaut'].value_counts())
-
-
-# On supprime les colonnes inutiles pour l'apprentissage
-table_indicateurs_classe = table_indicateurs_classe.drop(["fichier", "fenetre", "rpm", "numero",	"source",	"fs", "position_OR", "diametre_mils",	"charge_hp", "rpm_nominal",	"classe"
-], axis = 1)
-
-display(table_indicateurs_classe.head())
-
-# MELANGER LES DONNEES POUR L'APPRENTISSAGE
-
-# 2. Mélanger les lignes de manière aléatoire
-# - frac=1 : on garde 100% des données (toutes les lignes)
-# - random_state=42 : fixe la "graine" aléatoire pour que le mélange soit reproductible si vous rejouez le code
-table_indicateurs_classe_melange = table_indicateurs_classe.sample(frac=1, random_state=42).reset_index(drop=True)
-
-display(table_indicateurs_classe_melange.head(8))
-
-
-X_classe_defaut = table_indicateurs_classe_melange.drop("defaut", axis=1)
-print ("X_classe_defaut :")
-display(X_classe_defaut.head())
-
-y_classe_defaut = table_indicateurs_classe_melange["defaut"]
-print ("y_classe_defaut :")
-display(y_classe_defaut.head())
-
-
-
-```
-
-Modèle d'apprentissage automatique (RANDOM FOREST)
+## PARAMÈTRES GÉNÉRAUX
 
 ```{python}
+## PARAMÈTRES GÉNÉRAUX
+# Pour refaire toute la démarche sur l'autre capteur, il suffit de changer CHEMIN_TABLE.
 
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score
-from sklearn.metrics import confusion_matrix
-from sklearn.metrics import ConfusionMatrixDisplay
-import matplotlib.pyplot as plt
-
-
-# Séparation des données en ensembles d'entraînement et de test
-
-X_train, X_test, y_train, y_test = train_test_split (X_sans_B, y_sans_B, test_size =0.2, random_state=42)
-
-
-
-
-# Création et configuration du classificateur Random Forest
-
-rf = RandomForestClassifier(n_estimators=4, max_depth=4, random_state=42)
-rf.fit(X_train, y_train)
-
-y_pred = rf.predict(X_test)
-
-
-
-accuracy = np.round(accuracy_score(y_test, y_pred), 3)
-print(f"Précision du modèle : {accuracy}")
-
-
-
-# Affichage de la matrice de confusion
-cm = confusion_matrix(y_test, y_pred)
-# Affichage
-disp = ConfusionMatrixDisplay(confusion_matrix=cm)
-disp.plot(cmap="Blues")
-
-plt.title(f"Matrice de confusion  & Accuracy  : {accuracy}")
-plt.show()
-
-# INTERPRETATION DES RESULTATS
-
-# 1. Récupérer l'importance calculée par le modèle
-importances = rf.feature_importances_
-
-# 2. Créer un DataFrame propre pour la lecture
-noms_variables = ["RMS", "Pic", "Crete", "Kurtosis"]
-df_importance = pd.DataFrame(
-    {"Indicateur": noms_variables, "Importance (%)": importances * 100}
-)
-
-# 3. Trier par ordre d'importance
-df_importance = df_importance.sort_values(
-    by="Importance (%)", ascending=False
-)
-print(df_importance.to_string(index=False))
-
-
-
-from sklearn.tree import export_text
-
-# Afficher les règles pour chacun des 4 arbres de la forêt
-for i, arbre in enumerate(rf.estimators_):
-    print(f"\n--- Structure de l'Arbre de décision n°{i+1} ---")
-    regles = export_text(arbre, feature_names=noms_variables)
-    print(regles)
-
-```
-
-## LOGISTIC REGRESSION POUR LA CLASSE DEFAUT
-```{python}
-# LOGISTIC REGESSION POUR LA CLASSE DEFAUT  
-
-
-from sklearn.linear_model import LogisticRegression
-
-
-# Séparation des données en ensembles d'entraînement et de test
-
-X_train, X_test, y_train, y_test = train_test_split (X_sans_B, y_sans_B, test_size =0.2, random_state=42)
-
-
-
-
-
-
-# Création et configuration du classificateur Logistic Regression
-
-lr = LogisticRegression(random_state=42)
-lr.fit(X_train, y_train)
-
-y_pred = lr.predict(X_test)
-
-
-
-accuracy = np.round(accuracy_score(y_test, y_pred), 3)
-print(f"Précision du modèle : {accuracy}")
-
-
-
-# Affichage de la matrice de confusion
-cm = confusion_matrix(y_test, y_pred)
-# Affichage
-disp = ConfusionMatrixDisplay(confusion_matrix=cm)
-disp.plot(cmap="Blues")
-
-plt.title(f"Matrice de confusion  & Accuracy  : {accuracy}")
-plt.show()
-
-# INTERPRETATION DES RESULTATS
-
-# 1. Récupérer l'importance calculée par le modèle
-coefficients = lr.coef_[0]
-
-# 2. Créer un DataFrame propre pour la lecture
-noms_variables = ["RMS", "Pic", "Crete", "Kurtosis"]
-df_coefficients = pd.DataFrame(
-    {"Indicateur": noms_variables, "Coefficient": coefficients }
-)
-
-# 3. Trier par ordre d'importance
-df_coefficients = df_coefficients.sort_values(
-    by="Coefficient", ascending=False
-)
-print(df_coefficients.to_string(index=False))
-
-
-
-
-
-
-
-
-```
-
-
-
-
-
-
-
-
-
-```{python}
-
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score
-from sklearn.metrics import confusion_matrix
-from sklearn.metrics import ConfusionMatrixDisplay
-import matplotlib.pyplot as plt
-
-
-# Séparation des données en ensembles d'entraînement et de test
-
-X_train, X_test, y_train, y_test = train_test_split (X_classe_defaut, y_classe_defaut, test_size =0.2, random_state=42)
-
-```
-
-
-
-
-## RANDOM FOREST POUR LA CLASSE DEFAUT
-
-
-```{python}
-
-
-# Création et configuration du classificateur Random Forest
-
-rf = RandomForestClassifier(n_estimators=100, max_depth=4, random_state=42)
-rf.fit(X_train, y_train)
-
-y_pred = rf.predict(X_test)
-
-
-
-accuracy = np.round(accuracy_score(y_test, y_pred), 3)
-print(f"Précision du modèle : {accuracy}")
-
-
-
-# Affichage de la matrice de confusion
-cm = confusion_matrix(y_test, y_pred)
-
-classes = rf.classes_
-
-# Affichage
-disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=classes)
-disp.plot(cmap="Blues")
-
-plt.title(f"Matrice de confusion  & Accuracy  : {accuracy}")
-plt.show()
-
-# INTERPRETATION DES RESULTATS
-
-# 1. Récupérer l'importance calculée par le modèle
-importances = rf.feature_importances_
-
-# 2. Créer un DataFrame propre pour la lecture
-noms_variables = ["RMS", "Pic", "Crete", "Kurtosis"]
-df_importance = pd.DataFrame(
-    {"Indicateur": noms_variables, "Importance (%)": importances * 100}
-)
-
-# 3. Trier par ordre d'importance
-df_importance = df_importance.sort_values(
-    by="Importance (%)", ascending=False
-)
-print(df_importance.to_string(index=False))
-
-
-
-from sklearn.tree import export_text
-
-# Afficher les règles pour chacun des 4 arbres de la forêt
-for i, arbre in enumerate(rf.estimators_):
-    print(f"\n--- Structure de l'Arbre de décision n°{i+1} ---")
-    regles = export_text(arbre, feature_names=noms_variables)
-    print(regles)
-
-```
-
-
-
-```{python}
-# JEU APPRENTISSAGE DEFAUT CLASSES _DEFAUT
-
+import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
-table_indicateurs= pd.read_csv(r"..\data\features\table_indicateurs.csv")
+CHEMIN_TABLE = r"..\data\features\table_DE.csv"            # puis "table_FE.csv"
+FEATURES     = ["RMS", "Pic", "Crete", "Kurtosis"]
+CIBLE        = "defaut"                  # Sain / IR / B / OR
+CLASSE_SAINE = "Sain"
+GRAINE       = 42
+N_PLIS       = 4                         # plis externes (évaluation)
+N_PLIS_INT   = 3                         # plis internes (réglage des hyperparamètres)
+```
 
-print("table indicateurs temp & spectraux +  defaut & classe")
-display(table_indicateurs.head())
+## FONCTION CHARGEMENT DE LA TABLE
 
-display(table_indicateurs['defaut'].value_counts())
-display(table_indicateurs['classe'].value_counts())
+```{python}
+## FONCTION CHARGEMENT DE LA TABLE
 
-# On supprime les colonnes inutiles pour l'apprentissage
-# On ne supprime pas fichier et fenetre car on va les utiliser pour le train_test_split stratifié par fichier   
+def F_CHARGER_TABLE(chemin, features=FEATURES, colonne_cible=CIBLE):
+    """Lit le CSV et ne garde QUE les features choisies + les colonnes de pilotage.
 
-table_indicateurs_classe = table_indicateurs_classe.drop([ "fenetre", "rpm", "numero",	"source",	"fs", "position_OR", "diametre_mils",	"charge_hp", "rpm_nominal",	"classe"
-], axis = 1)
+    Les colonnes de pilotage (fichier, charge, diamètre) servent à construire les
+    plis ; elles ne sont JAMAIS données au modèle.
+    """
+    table = pd.read_csv(chemin)
+    pilotage = ["fichier", "charge_hp", "diametre_mils"]
+    
+    # si les noms de colonnes de table ne contiennent pas tous les noms requis par features + [colonne_cible] + pilotage, on lève une erreur   
+    manquantes = [c for c in features + [colonne_cible] + pilotage if c not in table.columns]
+    if manquantes:
+        raise ValueError(f"Colonnes absentes de {chemin} : {manquantes}")
+
+    # on ne garde que les colonnes nécessaires pour l'apprentissage
+    table = table[features + [colonne_cible] + pilotage].copy()
+
+    # on vérifie qu'il n'y a pas de valeurs manquantes dans les features
+    nb_nan = int(table[features].isna().sum().sum())
+    if nb_nan:
+        raise ValueError(f"{nb_nan} valeurs manquantes dans les features.")
+
+    # on affiche des informations sur la table chargée à entrainer
+    print ("ENTRAINEMENT SUR LES FEATURES : ", features)
+    print ("Table chargée depuis :", chemin)
+    
+    # Identification nombre de lignes et de fichiers uniques dans la table
+    print(f"{len(table)} lignes, {table['fichier'].nunique()} fichiers")
+    
+    # Identification nombre de fichiers par classe
+    print("Fichiers par classe :", table.groupby(colonne_cible)["fichier"].nunique().to_dict())
+    return table.reset_index(drop=True)
+```
+
+## FONCTION PROTOCOLES DE VALIDATION
+
+```{python}
+## FONCTION PROTOCOLES DE VALIDATION
+from sklearn.model_selection import (StratifiedKFold, StratifiedGroupKFold,
+                                     LeaveOneGroupOut)
+
+def F_PROTOCOLES(table, n_plis=N_PLIS, graine=GRAINE):
+    """Les 4 protocoles du §7.2.
+
+    Chaque protocole = (découpage externe, groupes externes, groupes internes).
+    groupes internes = None  -> le réglage interne découpe aussi au hasard (protocole naïf).
+    """
+    # Leave-one-diameter-out : les défauts sont groupés par diamètre ; les 4 fichiers
+    # sains (diamètre 0) sont répartis entre les plis selon leur charge.
+    
+    # Pour tester si le modèle reconnaît un défaut d'une taille inconnue (protocole 4),
+    #  on regroupe les données par diamètre de défaut (7, 14 ou 21 mils).
+    #  Or, les machines saines ont un diamètre de 0. 
+    #  Si on les laissait à 0, toutes les données saines seraient isolées dans un seul pli de test, empêchant le modèle d'apprendre à quoi ressemble un fonctionnement normal.
+
+    #• .where(table["diametre_mils"] > 0, ...) : Garde la valeur du diamètre si la machine a un défaut (> 0).
+    #• table["charge_hp"].map(sain_vers_pli) : Si le diamètre est 0 (machine saine), remplace ce 0 par 7, 14 ou 21 selon la charge moteur (charge_hp). Les données saines sont ainsi réparties équitablement dans chaque pli.
+
+    # dictionnaire 
+    sain_vers_pli = {0: 7, 1: 14, 2: 21, 3: 7}
+    groupe_diametre = table["diametre_mils"].where(
+        table["diametre_mils"] > 0, table["charge_hp"].map(sain_vers_pli))
+
+    return {
+        "1. Aléatoire (fenêtres)": (StratifiedKFold(n_plis, shuffle=True, random_state=graine),
+                                    None, None),
+        "2. Groupé par fichier":   (StratifiedGroupKFold(n_plis, shuffle=True, random_state=graine),
+                                    table["fichier"], table["fichier"]),
+        "3. Leave-one-load-out":   (LeaveOneGroupOut(), table["charge_hp"], table["fichier"]),
+        "4. Leave-one-diameter-out": (LeaveOneGroupOut(), groupe_diametre, table["fichier"]),
+    }
+```
+
+## FONCTION TRAIN TEST SPLIT POUR LA CLASSE DEFAUT
+
+```{python}
+## FONCTION TRAIN TEST SPLIT POUR LA CLASSE DEFAUT
+# Ne renvoie plus UN seul découpage : renvoie TOUS les plis du protocole,
+# après contrôle (aucun fichier commun, toutes les classes présentes en test).
+
+def F_TRAIN_TEST_SPLIT(table, decoupage, groupes, colonne_cible=CIBLE, afficher=True):
+    y = table[colonne_cible]
+    plis = list(decoupage.split(table, y, groupes))
+    classes = set(y.unique())
+
+    lignes = []
+    for k, (train, test) in enumerate(plis, 1):
+        f_train = set(table["fichier"].iloc[train])
+        f_test  = set(table["fichier"].iloc[test])
+        communs = f_train & f_test
+        if groupes is not None and communs:
+            raise ValueError(f"Pli {k} : fichiers des deux côtés -> {communs}")
+        manquantes = classes - set(y.iloc[test])
+        lignes.append({"pli": k,
+                       "fenêtres train/test": f"{len(train)} / {len(test)}",
+                       "fichiers train/test": f"{len(f_train)} / {len(f_test)}",
+                       "fichiers communs": len(communs),
+                       "classes absentes du test": ", ".join(sorted(manquantes)) or "-"})
+    if afficher:
+        display(pd.DataFrame(lignes).set_index("pli"))
+    return plis
+```
+
+## FONCTIONS MÉTRIQUES POUR LA CLASSE DEFAUT
+
+```{python}
+## FONCTIONS MÉTRIQUES POUR LA CLASSE DEFAUT
+from sklearn.metrics import fbeta_score, f1_score, balanced_accuracy_score
+
+def F_TAUX_DEFAUTS_MANQUES(y_true, y_pred, classe_saine=CLASSE_SAINE):
+    """FNR : part des vrais défauts prédits comme sains."""
+    y_true, y_pred = np.asarray(y_true), np.asarray(y_pred)
+    defauts_reels = y_true != classe_saine
+    return (y_pred[defauts_reels] == classe_saine).mean() if defauts_reels.any() else np.nan
+
+def F_TAUX_FAUSSES_ALERTES(y_true, y_pred, classe_saine=CLASSE_SAINE):
+    """Part des vrais sains prédits comme défectueux."""
+    y_true, y_pred = np.asarray(y_true), np.asarray(y_pred)
+    sains_reels = y_true == classe_saine
+    return (y_pred[sains_reels] != classe_saine).mean() if sains_reels.any() else np.nan
+
+def F_F2_DETECTION(y_true, y_pred, classe_saine=CLASSE_SAINE):
+    """F2 sur la détection défectueux / sain (privilégie le rappel des défauts)."""
+    return fbeta_score(np.asarray(y_true) != classe_saine,
+                       np.asarray(y_pred) != classe_saine, beta=2, zero_division=0)
+
+def F_FNR(y_true, y_pred, classe_saine=CLASSE_SAINE):
+    """Détail des défauts manqués, par classe réelle."""
+    y_true, y_pred = np.asarray(y_true), np.asarray(y_pred)
+    defauts_reels = y_true != classe_saine
+    detail = pd.DataFrame({
+        "réels": pd.Series(y_true[defauts_reels]).value_counts(),
+        "prédits sain": pd.Series(y_true[defauts_reels & (y_pred == classe_saine)]).value_counts(),
+    }).fillna(0).astype(int)
+    display(detail)
+    return F_TAUX_DEFAUTS_MANQUES(y_true, y_pred, classe_saine)
+
+def F_SCORES(y_true, y_pred):
+    """Toutes les métriques d'un pli, dans un dictionnaire."""
+    return {"F1 macro":          f1_score(y_true, y_pred, average="macro", zero_division=0),
+            "Balanced accuracy": balanced_accuracy_score(y_true, y_pred),
+            "Défauts manqués":   F_TAUX_DEFAUTS_MANQUES(y_true, y_pred),
+            "Fausses alertes":   F_TAUX_FAUSSES_ALERTES(y_true, y_pred),
+            "F2 détection":      F_F2_DETECTION(y_true, y_pred)}
+```
+
+## FONCTIONS MODÈLES
+
+Chaque fonction renvoie le modèle (dans un pipeline si un scaler est nécessaire) et sa grille d'hyperparamètres. L'entraînement et l'évaluation sont faits par une seule fonction commune, `F_EVALUER_MODELE`, pour que tous les modèles suivent exactement le même protocole.
+
+```{python}
+## FONCTION RANDOM FOREST
+from sklearn.ensemble import RandomForestClassifier
+
+def F_RANDOM_FOREST(graine=GRAINE):
+    modele = RandomForestClassifier(n_estimators=200, class_weight="balanced",
+                                    random_state=graine, n_jobs=-1)
+    grille = {"max_depth": [None, 8],
+              "min_samples_leaf": [1, 5, 20],
+              "max_features": ["sqrt", None]}
+    return modele, grille
+```
+
+```{python}
+## FONCTION LOGISTIC REGRESSION
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+
+def F_LOGISTIC_REGRESSION(graine=GRAINE):
+    modele = make_pipeline(StandardScaler(),
+                           LogisticRegression(class_weight="balanced", max_iter=5000,
+                                              random_state=graine))
+    grille = {"logisticregression__C": [0.01, 0.1, 1, 10, 100]}
+    return modele, grille
+```
+
+```{python}
+## FONCTION SVM NOYAU RBF
+from sklearn.svm import SVC
+
+def F_SVM_NOYAU_RBF(graine=GRAINE):
+    modele = make_pipeline(StandardScaler(),
+                           SVC(kernel="rbf", class_weight="balanced", random_state=graine))
+    grille = {"svc__C": [0.1, 1, 10, 100],
+              "svc__gamma": ["scale", 0.01, 0.1, 1]}
+    return modele, grille
+```
+
+```{python}
+## FONCTION GRADIENT BOOSTING (HistGradientBoostingClassifier)
+from sklearn.ensemble import HistGradientBoostingClassifier
+
+def F_GRADIENT_BOOSTING(graine=GRAINE):
+    modele = HistGradientBoostingClassifier(class_weight="balanced", early_stopping=False,
+                                            random_state=graine)
+    grille = {"learning_rate": [0.05, 0.2],
+              "max_iter": [100, 300],
+              "max_leaf_nodes": [7, 15],
+              "min_samples_leaf": [20, 50]}
+    return modele, grille
+```
+
+```{python}
+## FONCTION K-NN (K-Nearest Neighbors)
+from sklearn.neighbors import KNeighborsClassifier
+
+def F_K_NN(graine=GRAINE):
+    modele = make_pipeline(StandardScaler(), KNeighborsClassifier())
+    grille = {"kneighborsclassifier__n_neighbors": [5, 11, 21, 51],
+              "kneighborsclassifier__weights": ["uniform", "distance"]}
+    return modele, grille
+
+MODELES = {"Random Forest":         F_RANDOM_FOREST,
+           "Régression logistique": F_LOGISTIC_REGRESSION,
+           "SVM RBF":               F_SVM_NOYAU_RBF,
+           "Gradient Boosting":     F_GRADIENT_BOOSTING,
+           "k-NN":                  F_K_NN}
+```
+
+## FONCTION ÉVALUATION D'UN MODÈLE (VALIDATION CROISÉE IMBRIQUÉE)
+
+```{python}
+## FONCTION ÉVALUATION D'UN MODÈLE (VALIDATION CROISÉE IMBRIQUÉE)
+# Boucle externe : les plis du protocole -> mesure de la performance.
+# Boucle interne : GridSearchCV sur le TRAIN du pli seulement -> choix des hyperparamètres.
+# Le scaler est dans le pipeline : il est réajusté à chaque pli, sur le train uniquement.
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import ConfusionMatrixDisplay, classification_report
+
+def F_EVALUER_MODELE(nom, F_MODELE, table, plis, groupes_internes,
+                     features=FEATURES, colonne_cible=CIBLE,
+                     n_plis_int=N_PLIS_INT, graine=GRAINE, afficher=True, titre=""):
+    X = table[features]
+    y = table[colonne_cible]
+    y_pred_oof = pd.Series(index=table.index, dtype=object)   # prédictions hors pli
+    scores, params = [], []
+
+    for train, test in plis:
+        modele, grille = F_MODELE(graine)
+        y_train = y.iloc[train]
+
+        if groupes_internes is None:          # protocole naïf : réglage aléatoire aussi
+            cv_int, groupes_int = StratifiedKFold(n_plis_int, shuffle=True,
+                                                  random_state=graine), None
+        else:                                 # réglage groupé par fichier
+            g_train = groupes_internes.iloc[train]
+            n = min(n_plis_int, table.iloc[train].groupby(colonne_cible)["fichier"].nunique().min())
+            cv_int, groupes_int = StratifiedGroupKFold(n, shuffle=True,
+                                                       random_state=graine), g_train
+
+        recherche = GridSearchCV(modele, grille, scoring="f1_macro", cv=cv_int, n_jobs=-1)
+        recherche.fit(X.iloc[train], y_train, groups=groupes_int)
+
+        y_pred = recherche.predict(X.iloc[test])
+        y_pred_oof.iloc[test] = y_pred
+        scores.append(F_SCORES(y.iloc[test], y_pred))
+        params.append(recherche.best_params_)
+
+    scores = pd.DataFrame(scores)
+
+    # Agrégation par fichier : vote majoritaire des fenêtres
+    vote = (pd.DataFrame({"fichier": table["fichier"], "reel": y, "pred": y_pred_oof})
+              .groupby("fichier")
+              .agg(reel=("reel", "first"), pred=("pred", lambda s: s.mode().iloc[0])))
+    exactitude_fichiers = (vote["reel"] == vote["pred"]).mean()
+
+    if afficher:
+        print(f"\n=== {nom} — {titre} ===")
+        print("Hyperparamètres retenus par pli :")
+        for k, p in enumerate(params, 1):
+            print(f"  pli {k} : {p}")
+        display(scores.agg(["mean", "std"]).round(3))
+        print(f"Exactitude par fichier (vote majoritaire) : {exactitude_fichiers:.3f} "
+              f"({(vote['reel'] == vote['pred']).sum()}/{len(vote)})")
+        print(classification_report(y, y_pred_oof, zero_division=0))
+        print("Défauts manqués par classe :")
+        F_FNR(y, y_pred_oof)
+        ConfusionMatrixDisplay.from_predictions(y, y_pred_oof, normalize="true",
+                                                values_format=".2f", cmap="Blues")
+        plt.title(f"{nom} — {titre}")
+        plt.show()
+
+    resume = {"Modèle": nom, "Protocole": titre}
+    for col in scores:
+        resume[col] = f"{scores[col].mean():.3f} ± {scores[col].std():.3f}"
+    resume["Exactitude fichiers"] = round(exactitude_fichiers, 3)
+    return resume, y_pred_oof, params
+```
+
+## FONCTION DÉMARCHE COMPLÈTE (UN CAPTEUR)
+
+```{python}
+## FONCTION DÉMARCHE COMPLÈTE (UN CAPTEUR)
+
+def F_DEMARCHE_COMPLETE(chemin, modeles=MODELES, protocoles_detailles=("2. Groupé par fichier",),
+                        features=FEATURES, colonne_cible=CIBLE):
+    """Charge la table, construit les 4 protocoles, évalue tous les modèles.
+
+    protocoles_detailles : protocoles pour lesquels on affiche rapports et matrices
+    de confusion (les autres n'apparaissent que dans le tableau récapitulatif).
+    """
+    table = F_CHARGER_TABLE(chemin, features, colonne_cible)
+    resultats = []
+
+    for nom_protocole, (decoupage, g_ext, g_int) in F_PROTOCOLES(table).items():
+        print(f"\n######## {nom_protocole} ########")
+        plis = F_TRAIN_TEST_SPLIT(table, decoupage, g_ext, colonne_cible)
+        for nom_modele, F_MODELE in modeles.items():
+            resume, _, _ = F_EVALUER_MODELE(
+                nom_modele, F_MODELE, table, plis, g_int, features, colonne_cible,
+                afficher=nom_protocole in protocoles_detailles, titre=nom_protocole)
+            resultats.append(resume)
+
+    resultats = pd.DataFrame(resultats)
+    recap = resultats.pivot(index="Modèle", columns="Protocole", values="F1 macro")
+    print("\nF1 macro (moyenne ± écart-type sur les plis) :")
+    display(recap)
+    return resultats
+```
+
+## APPEL DES FONCTIONS : CAPTEUR DRIVE END (DE)
+
+```{python}
+resultats_DE = F_DEMARCHE_COMPLETE(r"..\data\features\table_DE.csv")
+resultats_DE
+```
+
+## APPEL DES FONCTIONS : CAPTEUR FAN END (FE)
+
+```{python}
+resultats_FE = F_DEMARCHE_COMPLETE(r"..\data\features\  table_FE.csv")
+resultats_FE
+```
+
+## COMPARAISON DE ET FE
+
+```{python}
+comparaison = pd.concat({"DE": resultats_DE.set_index(["Modèle", "Protocole"])["F1 macro"],
+                         "FE": resultats_FE.set_index(["Modèle", "Protocole"])["F1 macro"]},
+                        axis=1)
+comparaison
+```
 
 
-display(table_indicateurs_classe.head())
 
 
 
-print("table indicateurs temp spectraux classe")
-print("table indicateurs temp spectraux defaut")
-print("table indicateurs temp classe")
-print("table indicateurs temp defaut)
-print("table indicateurs RMS Kurtosis classe")
-print("table indicateurs RMS Kurtosis defaut)
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+NOUVELLE PARTIE POUR L'APPRENTISSAGE AUTOMATIQUE AVEC RANDOM FOREST, LOGISTIC REGRESSION, SVM, GRADIENT BOOSTING ET K-NN
+
+
+
+PARTIE II — Plan de la suite du projet et du rapport
+7. Cadre commun à toutes les approches
+Les conclusions de l'exploration imposent un protocole identique pour toutes les familles de modèles, afin que les comparaisons soient honnêtes.
+7.1 Trois tâches de difficulté croissante
+Tâche	Cible	Intérêt
+T1	Détection : sain / défectueux (2 classes)	Cas d'usage industriel principal ; déjà presque résolu par le RMS → baseline
+T2	Localisation : Sain / IR / B / OR (4 classes)	Ce que l'analyse d'enveloppe permet d'expliquer physiquement
+T3	Localisation × diamètre (10 classes)	Benchmark de la littérature ; attention au biais « diamètre = essai »
+
+7.2 Protocole de validation
+•	Validation croisée groupée par fichier (GroupKFold / StratifiedGroupKFold) : jamais de fenêtres d'un même fichier des deux côtés.
+•	Validation croisée par charge (leave-one-load-out) : apprentissage sur 3 charges, test sur la 4ᵉ — mesure la généralisation à des conditions de fonctionnement non vues.
+•	Comparaison obligatoire avec un split aléatoire par fenêtre, pour chiffrer l'optimisme qu'il introduit (illustration pédagogique de la fuite de données).
+•	Pipelines scikit-learn (scaler + modèle) ajustés uniquement sur les plis d'apprentissage.
+7.3 Métriques
+•	F1 macro et balanced accuracy (classes déséquilibrées : Sain ≈ 28 % des fenêtres).
+•	Matrice de confusion normalisée ; pour la détection, rappel des défauts (coût d'un défaut manqué) et taux de fausses alarmes.
+•	Agrégation possible au niveau fichier (vote majoritaire des fenêtres) en plus du niveau fenêtre.
+•	Temps d'entraînement et d'inférence, nombre de paramètres (critère de déploiement).
+
+
+
+
+```{python}
 
 ```
+
+
+
+
+
+
+
+
+
+
+8. Machine Learning classique
+8.1 Objectif
+Établir des modèles de référence interprétables sur la table des features, et mesurer ce que le feature engineering « physique » apporte.
+8.2 Enrichissement des features
+•	Temporelles : skewness, facteurs de forme, d'impulsion et de jeu (clearance), écart-type, valeur crête à crête.
+•	Fréquentielles : énergie par bandes, centroïde et entropie spectrale, kurtosis spectral (kurtogramme pour choisir la bande de démodulation au lieu de 1–4 kHz fixe).
+•	Temps-fréquence : énergie des paquets d'ondelettes (WPD).
+•	Normalisation par la vitesse (analyse en ordres) pour rendre les raies indépendantes du régime.
+•	Étude de la durée de fenêtre (0,1 s / 0,2 s / 0,5 s / 1 s) : compromis résolution spectrale / nombre d'observations.
+8.3 Modèles
+Modèle	Rôle
+Régression logistique	Baseline linéaire (déjà amorcée), coefficients interprétables
+Arbre de décision	Règles lisibles, déjà amorcé (profondeur 4)
+k plus proches voisins	Référence non paramétrique, sensible au scaling
+SVM (noyau RBF)	Classique de la littérature roulements
+Random Forest	Robuste, importance des variables
+Gradient Boosting (XGBoost / LightGBM)	Généralement le plus performant sur données tabulaires
+
+8.4 Démarche
+1.	Baseline sur les 4 indicateurs temporels, puis 21 features, puis features enrichies.
+2.	Sélection de variables (importance, permutation, corrélations) et réduction de dimension (ACP, t-SNE/UMAP pour la visualisation).
+3.	Optimisation des hyperparamètres en validation croisée groupée (GridSearch / Optuna).
+4.	Gestion du déséquilibre (class_weight, sous-échantillonnage du sain).
+5.	Interprétabilité : importances et SHAP, mises en regard de la physique (BPFI ↔ IR, BPFO ↔ OR).
+6.	Analyse des erreurs : quelles classes sont confondues (défauts de bille attendus).
+8.5 Livrables
+Tableau comparatif des modèles par tâche et protocole de validation ; meilleur modèle classique retenu comme référence pour le Deep Learning.
+
+
+
+
+
+
 
 ## FONCTION TRAIN TEST SPLIT POUR LA CLASSE DEFAUT   
 
