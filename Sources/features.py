@@ -10,11 +10,21 @@ from .indicateurs import indicateurs_spectraux, indicateurs_temporels, indicateu
 from .signaux import creer_filtre, M_up_enveloppe_bande
 
 
-def fenetrer(x, fs, duree=DUREE_FENETRE):
-    """Découpe un signal en fenêtres sans recouvrement.
-    Renvoie une liste de fenêtres (tableaux numpy)."""
-    taille = int(duree * fs)
-    return [x[i * taille:(i + 1) * taille] for i in range(len(x) // taille)]
+# def fenetrer(x, fs, duree=DUREE_FENETRE):
+#     """Découpe un signal en fenêtres sans recouvrement.
+#     Renvoie une liste de fenêtres (tableaux numpy)."""
+#     taille = int(duree * fs)
+#     return [x[i * taille:(i + 1) * taille] for i in range(len(x) // taille)]
+
+
+def fenetrer(x, fs, duree=DUREE_FENETRE, recouvrement=0.0):
+    """
+    Découpe un signal en fenêtres avec x secondes (duree), avec un recouvrement paramétrable : sans recouvrement par défaut.
+    """
+    taille = round(duree * fs)
+    pas = int(taille * (1 - recouvrement))
+    return [x[i:i + taille] for i in range(0, len(x) - taille + 1, pas)]
+
 
 def construire_table(selection, charger, canaux=None):
     """Construit la table des indicateurs : une ligne par (fichier, fenêtre, canal).
