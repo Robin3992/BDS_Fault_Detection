@@ -111,40 +111,6 @@ def charger(nom, canaux=("DE", "FE", "BA")):
     return signaux
 
 
-def charger(nom, canaux=("DE", "FE", "BA")):
-    """Renvoie {canal: signal, 'fs', 'rpm'} pour un fichier du catalogue
-    (ex. '12kDE_IR007_L0'). Télécharge le fichier la 1re fois, puis le
-    relit en local (cache).
-
-    canaux : canal(x) à extraire du .mat — seuls ceux-là sont gardés
-            en mémoire (ex. charger(nom, canaux=("DE",)) pour le DE seul).
-    """
-    info = catalogue.loc[nom]
-    numero = int(info["numero"])
-    chemin = CACHE / f"{nom}__{numero}.mat"     # ex. 12kDE_IR007_L0__105.mat
-
-    if not chemin.exists():                     # 1re fois : téléchargement
-        CACHE.mkdir(parents=True, exist_ok=True)
-        with urllib.request.urlopen(URL_CWRU + f"{numero}.mat") as reponse:
-            chemin.write_bytes(reponse.read())
-    mat = loadmat(chemin)
-
-    def choisir(suffixe):                       # privilégie la variable du bon numéro
-        cles = [k for k in mat if k.endswith(suffixe)]
-        bonne = [k for k in cles if k.startswith(f"X{numero:03d}")]
-        return (bonne or cles or [None])[0]
-
-    if isinstance(canaux, str):
-        canaux = (canaux,)
-    signaux = {"fs": int(info["fs"])}
-    for canal in canaux:                        # ← seulement les canaux demandés
-        cle = choisir(f"_{canal}_time")
-        signaux[canal] = None if cle is None else np.ravel(mat[cle])
-    cle_rpm = choisir("RPM")
-    signaux["rpm"] = (float(np.squeeze(mat[cle_rpm])) if cle_rpm
-                      else float(info["rpm_nominal"]))
-    return signaux
-
 def _en_liste(valeur):
     """Normalise un critère de sélection en liste (None -> pas de filtre)."""
     if valeur is None:
