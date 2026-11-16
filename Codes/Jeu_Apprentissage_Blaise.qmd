@@ -1,0 +1,886 @@
+Introduction Ce document présente: 
+
+\* la création des jeux d'apprentissages. 
+
+\* l'apprentissage automatique (AutoML) pour la dectection de défauts avec RMS et Kurtosis
+
+
+
+
+
+```{python}
+# JEU APPRENTISSAGE CLASSE 1 OU 0 
+# X_sans_B : variables d'entrée (RMS, Pic, Crete, Kurtosis)
+# y_sans_B : variable de sortie (Failure = 1 ou 0)
+
+import pandas as pd
+import numpy as np
+
+
+table_indicateurs_failure = pd.read_csv(r"..\data\features\table_indicateurs.csv")
+
+display(table_indicateurs_failure.head())
+
+
+# Si df['Classe'] est égal à "sains", on met 0, sinon 1
+table_indicateurs_failure["Failure"] = np.where(table_indicateurs_failure["classe"] == "Sain", 0, 1)
+
+display(table_indicateurs_failure.head())
+
+# Séparation du fichier sans défaut billes et avec défaut billes
+# On ne garde que les lignes où le défaut est différent de "B"
+table_indicateurs_failure_sans_B = table_indicateurs_failure[table_indicateurs_failure["defaut"] != "B"]
+
+print("comptage valeurs defaut de table_indicateurs_failure_sans_B :")
+ 
+display(table_indicateurs_failure_sans_B["defaut"].value_counts())
+
+# On supprime les colonnes inutiles pour l'apprentissage
+table_indicateurs_failure_sans_B = table_indicateurs_failure_sans_B.drop(["fichier", "fenetre", "rpm", "numero",	"source",	"fs",	"defaut", "position_OR", "diametre_mils",	"charge_hp", "rpm_nominal",	"classe"
+], axis = 1)
+
+display(table_indicateurs_failure_sans_B.head())
+
+display(table_indicateurs_failure_sans_B.describe())
+
+display(table_indicateurs_failure_sans_B["Failure"].value_counts())
+
+
+
+# EQUILIBRAGE DES CLASSES "Failure" POUR L'APPRENTISSAGE
+
+# 1. Identifier les indices des lignes qui respectent la condition
+indices_failure = table_indicateurs_failure_sans_B[
+    table_indicateurs_failure_sans_B["Failure"] == 1
+].index
+
+# 2. Échantillonner au hasard (et sans remise) exactement 5/12ème de ces indices
+# (Le paramètre random_state assure que la suppression reste identique à chaque exécution)
+indices_a_supprimer = indices_failure.to_series().sample(
+    frac=5 / 12, random_state=42
+)
+
+# 3. Supprimer ces lignes du DataFrame d'origine
+table_indicateurs_failure_sans_B = table_indicateurs_failure_sans_B.drop(
+    indices_a_supprimer
+)
+
+display(table_indicateurs_failure_sans_B["Failure"].value_counts())
+
+
+
+# MELANGER LES DONNEES POUR L'APPRENTISSAGE
+
+# 2. Mélanger les lignes de manière aléatoire
+# - frac=1 : on garde 100% des données (toutes les lignes)
+# - random_state=42 : fixe la "graine" aléatoire pour que le mélange soit reproductible si vous rejouez le code
+table_indicateurs_failure_sans_B_melange = table_indicateurs_failure_sans_B.sample(frac=1, random_state=42).reset_index(drop=True)
+
+display(table_indicateurs_failure_sans_B_melange.head(8))
+
+
+
+# 3. Sauvegarder le nouveau fichier mélangé pour l'AutoML
+table_indicateurs_failure_sans_B_melange.to_csv('table_indicateurs_failure_sans_B_melange.csv', index=False)
+
+print("Le fichier a été mélangé avec succès et sauvegardé sous 'table_indicateurs_failure_sans_B_melange.csv' !")
+
+
+X_sans_B = table_indicateurs_failure_sans_B_melange.drop("Failure", axis=1)
+print ("X_sans_B :")
+display(X_sans_B.head())
+
+y_sans_B = table_indicateurs_failure_sans_B_melange["Failure"]
+print ("y_sans_B :")
+display(y_sans_B.head())
+
+
+```
+
+
+```{python}
+# JEU APPRENTISSAGE DEFAUT CLASSES _DEFAUT
+
+table_indicateurs_classe= pd.read_csv(r"C:\Users\ReMarkt\Documents\0_PROJET_SCIENTIST\GitHub\BDS_Fault_Detection\data\features\table_indicateurs.csv")
+
+
+display(table_indicateurs_classe.head())
+
+display(table_indicateurs_classe['defaut'].value_counts())
+
+
+# On supprime les colonnes inutiles pour l'apprentissage
+table_indicateurs_classe = table_indicateurs_classe.drop(["fichier", "fenetre", "rpm", "numero",	"source",	"fs", "position_OR", "diametre_mils",	"charge_hp", "rpm_nominal",	"classe"
+], axis = 1)
+
+display(table_indicateurs_classe.head())
+
+# MELANGER LES DONNEES POUR L'APPRENTISSAGE
+
+# 2. Mélanger les lignes de manière aléatoire
+# - frac=1 : on garde 100% des données (toutes les lignes)
+# - random_state=42 : fixe la "graine" aléatoire pour que le mélange soit reproductible si vous rejouez le code
+table_indicateurs_classe_melange = table_indicateurs_classe.sample(frac=1, random_state=42).reset_index(drop=True)
+
+display(table_indicateurs_classe_melange.head(8))
+
+
+X_classe_defaut = table_indicateurs_classe_melange.drop("defaut", axis=1)
+print ("X_classe_defaut :")
+display(X_classe_defaut.head())
+
+y_classe_defaut = table_indicateurs_classe_melange["defaut"]
+print ("y_classe_defaut :")
+display(y_classe_defaut.head())
+
+
+
+```
+
+Modèle d'apprentissage automatique (RANDOM FOREST)
+
+```{python}
+
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import ConfusionMatrixDisplay
+import matplotlib.pyplot as plt
+
+
+# Séparation des données en ensembles d'entraînement et de test
+
+X_train, X_test, y_train, y_test = train_test_split (X_sans_B, y_sans_B, test_size =0.2, random_state=42)
+
+
+
+
+# Création et configuration du classificateur Random Forest
+
+rf = RandomForestClassifier(n_estimators=4, max_depth=4, random_state=42)
+rf.fit(X_train, y_train)
+
+y_pred = rf.predict(X_test)
+
+
+
+accuracy = np.round(accuracy_score(y_test, y_pred), 3)
+print(f"Précision du modèle : {accuracy}")
+
+
+
+# Affichage de la matrice de confusion
+cm = confusion_matrix(y_test, y_pred)
+# Affichage
+disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+disp.plot(cmap="Blues")
+
+plt.title(f"Matrice de confusion  & Accuracy  : {accuracy}")
+plt.show()
+
+# INTERPRETATION DES RESULTATS
+
+# 1. Récupérer l'importance calculée par le modèle
+importances = rf.feature_importances_
+
+# 2. Créer un DataFrame propre pour la lecture
+noms_variables = ["RMS", "Pic", "Crete", "Kurtosis"]
+df_importance = pd.DataFrame(
+    {"Indicateur": noms_variables, "Importance (%)": importances * 100}
+)
+
+# 3. Trier par ordre d'importance
+df_importance = df_importance.sort_values(
+    by="Importance (%)", ascending=False
+)
+print(df_importance.to_string(index=False))
+
+
+
+from sklearn.tree import export_text
+
+# Afficher les règles pour chacun des 4 arbres de la forêt
+for i, arbre in enumerate(rf.estimators_):
+    print(f"\n--- Structure de l'Arbre de décision n°{i+1} ---")
+    regles = export_text(arbre, feature_names=noms_variables)
+    print(regles)
+
+```
+
+## LOGISTIC REGRESSION POUR LA CLASSE DEFAUT
+```{python}
+# LOGISTIC REGESSION POUR LA CLASSE DEFAUT  
+
+
+from sklearn.linear_model import LogisticRegression
+
+
+# Séparation des données en ensembles d'entraînement et de test
+
+X_train, X_test, y_train, y_test = train_test_split (X_sans_B, y_sans_B, test_size =0.2, random_state=42)
+
+
+
+
+
+
+# Création et configuration du classificateur Logistic Regression
+
+lr = LogisticRegression(random_state=42)
+lr.fit(X_train, y_train)
+
+y_pred = lr.predict(X_test)
+
+
+
+accuracy = np.round(accuracy_score(y_test, y_pred), 3)
+print(f"Précision du modèle : {accuracy}")
+
+
+
+# Affichage de la matrice de confusion
+cm = confusion_matrix(y_test, y_pred)
+# Affichage
+disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+disp.plot(cmap="Blues")
+
+plt.title(f"Matrice de confusion  & Accuracy  : {accuracy}")
+plt.show()
+
+# INTERPRETATION DES RESULTATS
+
+# 1. Récupérer l'importance calculée par le modèle
+coefficients = lr.coef_[0]
+
+# 2. Créer un DataFrame propre pour la lecture
+noms_variables = ["RMS", "Pic", "Crete", "Kurtosis"]
+df_coefficients = pd.DataFrame(
+    {"Indicateur": noms_variables, "Coefficient": coefficients }
+)
+
+# 3. Trier par ordre d'importance
+df_coefficients = df_coefficients.sort_values(
+    by="Coefficient", ascending=False
+)
+print(df_coefficients.to_string(index=False))
+
+
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+```{python}
+
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import ConfusionMatrixDisplay
+import matplotlib.pyplot as plt
+
+
+# Séparation des données en ensembles d'entraînement et de test
+
+X_train, X_test, y_train, y_test = train_test_split (X_classe_defaut, y_classe_defaut, test_size =0.2, random_state=42)
+
+```
+
+
+
+
+## RANDOM FOREST POUR LA CLASSE DEFAUT
+
+
+```{python}
+
+
+# Création et configuration du classificateur Random Forest
+
+rf = RandomForestClassifier(n_estimators=100, max_depth=4, random_state=42)
+rf.fit(X_train, y_train)
+
+y_pred = rf.predict(X_test)
+
+
+
+accuracy = np.round(accuracy_score(y_test, y_pred), 3)
+print(f"Précision du modèle : {accuracy}")
+
+
+
+# Affichage de la matrice de confusion
+cm = confusion_matrix(y_test, y_pred)
+
+classes = rf.classes_
+
+# Affichage
+disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=classes)
+disp.plot(cmap="Blues")
+
+plt.title(f"Matrice de confusion  & Accuracy  : {accuracy}")
+plt.show()
+
+# INTERPRETATION DES RESULTATS
+
+# 1. Récupérer l'importance calculée par le modèle
+importances = rf.feature_importances_
+
+# 2. Créer un DataFrame propre pour la lecture
+noms_variables = ["RMS", "Pic", "Crete", "Kurtosis"]
+df_importance = pd.DataFrame(
+    {"Indicateur": noms_variables, "Importance (%)": importances * 100}
+)
+
+# 3. Trier par ordre d'importance
+df_importance = df_importance.sort_values(
+    by="Importance (%)", ascending=False
+)
+print(df_importance.to_string(index=False))
+
+
+
+from sklearn.tree import export_text
+
+# Afficher les règles pour chacun des 4 arbres de la forêt
+for i, arbre in enumerate(rf.estimators_):
+    print(f"\n--- Structure de l'Arbre de décision n°{i+1} ---")
+    regles = export_text(arbre, feature_names=noms_variables)
+    print(regles)
+
+```
+
+
+
+```{python}
+# JEU APPRENTISSAGE DEFAUT CLASSES _DEFAUT
+
+import pandas as pd
+
+table_indicateurs_classe= pd.read_csv(r"..\data\features\table_indicateurs.csv")
+
+
+display(table_indicateurs_classe.head())
+
+display(table_indicateurs_classe['defaut'].value_counts())
+
+
+# On supprime les colonnes inutiles pour l'apprentissage
+# On ne supprime pas fichier et fenetre car on va les utiliser pour le train_test_split stratifié par fichier   
+
+table_indicateurs_classe = table_indicateurs_classe.drop([ "fenetre", "rpm", "numero",	"source",	"fs", "position_OR", "diametre_mils",	"charge_hp", "rpm_nominal",	"classe"
+], axis = 1)
+
+
+display(table_indicateurs_classe.head())
+
+```
+
+## FONCTION TRAIN TEST SPLIT POUR LA CLASSE DEFAUT   
+
+
+
+```{python}
+
+from sklearn.model_selection import StratifiedGroupKFold
+
+
+def F_TRAIN_TEST_SPLIT(table, colonne_cible="defaut", colonne_groupe="fichier", n_plis=4, graine=42):
+    """Sépare la table en train et test, en gardant chaque fichier d'un seul côté."""
+    fichiers_par_classe = table.groupby(colonne_cible)[colonne_groupe].nunique()
+    print("Fichiers par classe :")
+    print(fichiers_par_classe, "\n")
+
+    if fichiers_par_classe.min() < n_plis:
+        raise ValueError(
+            f"Il faut au moins {n_plis} fichiers par classe : réduis n_plis "
+            "ou regroupe les classes trop petites."
+        )
+
+    X = table.drop(columns=[colonne_cible, colonne_groupe])
+    y = table[colonne_cible]
+    groupes = table[colonne_groupe]
+
+    decoupage = StratifiedGroupKFold(n_splits=n_plis, shuffle=True, random_state=graine)
+    train, test = next(decoupage.split(X, y, groupes))
+
+    X_train, X_test = X.iloc[train], X.iloc[test]
+    y_train, y_test = y.iloc[train], y.iloc[test]
+    groupes_train, groupes_test = groupes.iloc[train], groupes.iloc[test]
+
+    print("Indicateurs utilisés :", list(X.columns))
+    print("Lignes train / test :", len(X_train), "/", len(X_test))
+    print("Fichiers train / test :", groupes_train.nunique(), "/", groupes_test.nunique())
+    print("Fichiers communs :", set(groupes_train) & set(groupes_test))
+    print("Classes dans le test :", y_test.value_counts().to_dict())
+
+    return X_train, X_test, y_train, y_test, groupes_train
+
+```
+
+## FONCTION FNR (False Negative Rate) POUR LA CLASSE DEFAUT
+
+```{python}
+import numpy as np
+import pandas as pd
+
+## FONCTION FNR (False Negative Rate) POUR LA CLASSE DEFAUT
+
+classe_saine = "Sain"  # à remplacer par le nom exact dans la colonne defaut
+
+def F_FNR(y_true, y_pred, classe_saine):
+    """Calcule le FNR : part des vrais défauts prédits comme sains."""
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+
+    if len(y_true) != len(y_pred):
+        raise ValueError("y_true et y_pred n'ont pas le même nombre de lignes.")
+
+    if classe_saine not in y_true:
+        raise ValueError(
+            f"Classe saine {classe_saine!r} introuvable. Classes présentes : {list(np.unique(y_true))}"
+        )
+
+    defauts_reels = y_true != classe_saine
+    nb_defauts = defauts_reels.sum()
+
+    if nb_defauts == 0:
+        raise ValueError("y_true ne contient aucun défaut réel.")
+
+    nb_manques = (y_pred[defauts_reels] == classe_saine).sum()
+    fnr = nb_manques / nb_defauts
+
+    detail = pd.DataFrame({
+        "réels": pd.Series(y_true[defauts_reels]).value_counts(),
+        "prédits sain": pd.Series(y_true[defauts_reels & (y_pred == classe_saine)]).value_counts(),
+    }).fillna(0).astype(int)
+
+    print(detail)
+    print(f"\nFNR = {nb_manques} / {nb_defauts} = {fnr:.3f}")
+
+    return fnr
+
+```
+
+
+
+
+```{python}
+import numpy as np
+from sklearn.metrics import fbeta_score, make_scorer
+
+CLASSE_SAINE = "Sain"  # à remplacer par le nom exact dans la colonne defaut
+
+
+def F_TAUX_DEFAUTS_MANQUES(y_true, y_pred, classe_saine=CLASSE_SAINE):
+    """Part des vrais défauts prédits comme sains."""
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+    defauts_reels = y_true != classe_saine
+    return (y_pred[defauts_reels] == classe_saine).mean()
+
+
+def F_TAUX_FAUSSES_ALERTES(y_true, y_pred, classe_saine=CLASSE_SAINE):
+    """Part des vrais éléments sains prédits comme défectueux."""
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+    sains_reels = y_true == classe_saine
+    return (y_pred[sains_reels] != classe_saine).mean()
+
+
+def F_F2_DETECTION(y_true, y_pred, classe_saine=CLASSE_SAINE):
+    """Score F2 sur la détection : défectueux ou sain."""
+    return fbeta_score(
+        np.asarray(y_true) != classe_saine,
+        np.asarray(y_pred) != classe_saine,
+        beta=2,
+    )
+
+
+score_f2_detection = make_scorer(F_F2_DETECTION)
+
+```
+
+
+
+
+
+
+
+
+## FONCTION RANDOM FOREST 
+
+
+
+
+```{python}
+## FONCTION RANDOM FOREST 
+
+
+
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import ConfusionMatrixDisplay, classification_report, f1_score
+from sklearn.model_selection import GridSearchCV, StratifiedGroupKFold
+import matplotlib.pyplot as plt
+
+def F_RANDOM_FOREST(X_train, X_test, y_train, y_test, groupes_train, n_plis=3, graine=42):
+    """Optimise une Random Forest et l'évalue sur X_test, y_test."""
+    grille = {
+        "max_depth": [None, 5, 10],
+        "min_samples_leaf": [1, 5, 10],
+        "max_features": ["sqrt", 2, 3],
+        "n_estimators": [100, 300, 500],
+    }
+
+    recherche = GridSearchCV(
+        RandomForestClassifier(class_weight="balanced", random_state=graine),
+        param_grid=grille,
+        scoring="f1_macro",
+        cv=StratifiedGroupKFold(n_splits=n_plis, shuffle=True, random_state=graine),
+        n_jobs=-1,
+    )
+    recherche.fit(X_train, y_train, groups=groupes_train)
+
+    meilleur_modele = recherche.best_estimator_
+    y_pred = meilleur_modele.predict(X_test)
+    f1_test = f1_score(y_test, y_pred, average="macro")
+
+    print("Meilleurs paramètres :", recherche.best_params_)
+    print(f"F1 macro en validation : {recherche.best_score_:.3f}")
+    print(f"F1 macro sur le test : {f1_test:.3f}\n")
+    print(classification_report(y_test, y_pred, zero_division=0))
+    
+    
+    print("Taux de défauts manqués :", round(F_TAUX_DEFAUTS_MANQUES(y_test, y_pred), 3))
+    print("Taux de fausses alertes :", round(F_TAUX_FAUSSES_ALERTES(y_test, y_pred), 3))
+    print("F2 détection :", round(F_F2_DETECTION(y_test, y_pred), 3))
+    
+    print("FNR (False Negative Rate) :")
+    fnr_rf = F_FNR(y_test, y_pred, classe_saine="Sain")
+    
+    ConfusionMatrixDisplay.from_predictions(y_test, y_pred, xticks_rotation=45)
+    plt.title("Matrice de confusion : Random Forest")
+    plt.show()
+
+    return meilleur_modele, recherche.best_params_, f1_test
+
+
+
+
+
+
+
+```
+
+
+## FONCTION LOGISTIC REGRESSION
+
+
+```{python}
+
+## FONCTION LOGISTIC REGRESSION
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import ConfusionMatrixDisplay, classification_report, f1_score
+from sklearn.model_selection import GridSearchCV, StratifiedGroupKFold
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+import matplotlib.pyplot as plt
+
+
+def F_LOGISTIC_REGRESSION(X_train, X_test, y_train, y_test, groupes_train, n_plis=3, graine=42):
+    """Optimise une régression logistique et l'évalue sur X_test, y_test."""
+    grille = {"logisticregression__C": [0.01, 0.1, 1, 10, 100]}
+
+    pipeline = make_pipeline(
+        StandardScaler(),
+        LogisticRegression(class_weight="balanced", max_iter=5000, random_state=graine),
+    )
+
+    recherche = GridSearchCV(
+        pipeline,
+        param_grid=grille,
+        scoring="f1_macro",
+        cv=StratifiedGroupKFold(n_splits=n_plis, shuffle=True, random_state=graine),
+        n_jobs=-1,
+    )
+    recherche.fit(X_train, y_train, groups=groupes_train)
+
+    meilleur_modele = recherche.best_estimator_
+    y_pred = meilleur_modele.predict(X_test)
+    f1_test = f1_score(y_test, y_pred, average="macro")
+
+    print("Meilleurs paramètres :", recherche.best_params_)
+    print(f"F1 macro en validation : {recherche.best_score_:.3f}")
+    print(f"F1 macro sur le test : {f1_test:.3f}\n")
+    print(classification_report(y_test, y_pred, zero_division=0))
+    print("Taux de défauts manqués :", round(F_TAUX_DEFAUTS_MANQUES(y_test, y_pred), 3))
+    print("Taux de fausses alertes :", round(F_TAUX_FAUSSES_ALERTES(y_test, y_pred), 3))
+    print("F2 détection :", round(F_F2_DETECTION(y_test, y_pred), 3))
+    
+    print("FNR (False Negative Rate) :")
+    fnr_rf = F_FNR(y_test, y_pred, classe_saine="Sain")
+
+    ConfusionMatrixDisplay.from_predictions(y_test, y_pred, xticks_rotation=45)
+    plt.title("Matrice de confusion : Logistic Regression")
+    plt.show()
+
+    return meilleur_modele, recherche.best_params_, f1_test
+
+```
+
+
+## FONCTION SVM Noyau RBF
+
+```{python}
+
+## FONCTION SVM Noyau RBF
+
+from sklearn.metrics import ConfusionMatrixDisplay, classification_report, f1_score
+from sklearn.model_selection import GridSearchCV, StratifiedGroupKFold
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
+import matplotlib.pyplot as plt
+
+def F_SVM_noyau_RBF(X_train, X_test, y_train, y_test, groupes_train, n_plis=3, graine=42):
+    """Optimise un SVM à noyau RBF et l'évalue sur X_test, y_test."""
+    grille = {
+        "svc__C": [0.1, 1, 10, 100],
+        "svc__gamma": ["scale", 0.01, 0.1, 1],
+    }
+
+    pipeline = make_pipeline(
+        StandardScaler(),
+        SVC(kernel="rbf", class_weight="balanced", random_state=graine),
+    )
+
+    recherche = GridSearchCV(
+        pipeline,
+        param_grid=grille,
+        scoring="f1_macro",
+        cv=StratifiedGroupKFold(n_splits=n_plis, shuffle=True, random_state=graine),
+        n_jobs=-1,
+    )
+    recherche.fit(X_train, y_train, groups=groupes_train)
+
+    meilleur_modele = recherche.best_estimator_
+    y_pred = meilleur_modele.predict(X_test)
+    f1_test = f1_score(y_test, y_pred, average="macro")
+
+    print("Meilleurs paramètres :", recherche.best_params_)
+    print(f"F1 macro en validation : {recherche.best_score_:.3f}")
+    print(f"F1 macro sur le test : {f1_test:.3f}\n")
+    print(classification_report(y_test, y_pred, zero_division=0))
+    print("Taux de défauts manqués :", round(F_TAUX_DEFAUTS_MANQUES(y_test, y_pred), 3))
+    print("Taux de fausses alertes :", round(F_TAUX_FAUSSES_ALERTES(y_test, y_pred), 3))
+    print("F2 détection :", round(F_F2_DETECTION(y_test, y_pred), 3))
+    print("FNR (False Negative Rate) :")
+    fnr_rf = F_FNR(y_test, y_pred, classe_saine="Sain")
+    ConfusionMatrixDisplay.from_predictions(y_test, y_pred, xticks_rotation=45)
+    plt.title("Matrice de confusion : SVM Noyau RBF")
+    plt.show()
+
+    return meilleur_modele, recherche.best_params_, f1_test
+
+
+
+```
+
+
+
+## FONCTION GRADIENT_BOOSTING _ istGradientBoostingClassifier
+
+```{python}
+
+## FONCTION GRADIENT_BOOSTING _HistGradientBoostingClassifier
+
+from sklearn.ensemble import HistGradientBoostingClassifier
+from sklearn.metrics import ConfusionMatrixDisplay, classification_report, f1_score
+from sklearn.model_selection import GridSearchCV, StratifiedGroupKFold
+import matplotlib.pyplot as plt
+
+
+def F_GRADIENT_BOOSTING(X_train, X_test, y_train, y_test, groupes_train, n_plis=3, graine=42):
+    """Optimise un gradient boosting et l'évalue sur X_test, y_test."""
+    grille = {
+        "learning_rate": [0.03, 0.1, 0.3],
+        "max_iter": [100, 300],
+        "max_leaf_nodes": [7, 15, 31],
+        "min_samples_leaf": [10, 20, 50],
+    }
+
+    recherche = GridSearchCV(
+        HistGradientBoostingClassifier(
+            class_weight="balanced", early_stopping=False, random_state=graine
+        ),
+        param_grid=grille,
+        scoring="f1_macro",
+        cv=StratifiedGroupKFold(n_splits=n_plis, shuffle=True, random_state=graine),
+        n_jobs=-1,
+    )
+    recherche.fit(X_train, y_train, groups=groupes_train)
+
+    meilleur_modele = recherche.best_estimator_
+    y_pred = meilleur_modele.predict(X_test)
+    f1_test = f1_score(y_test, y_pred, average="macro")
+
+    print("Meilleurs paramètres :", recherche.best_params_)
+    print(f"F1 macro en validation : {recherche.best_score_:.3f}")
+    print(f"F1 macro sur le test : {f1_test:.3f}\n")
+    print(classification_report(y_test, y_pred, zero_division=0))
+    print("Taux de défauts manqués :", round(F_TAUX_DEFAUTS_MANQUES(y_test, y_pred), 3))
+    print("Taux de fausses alertes :", round(F_TAUX_FAUSSES_ALERTES(y_test, y_pred), 3))
+    print("F2 détection :", round(F_F2_DETECTION(y_test, y_pred), 3))
+    
+    print("FNR (False Negative Rate) :")
+    fnr_rf = F_FNR(y_test, y_pred, classe_saine="Sain")
+    
+    ConfusionMatrixDisplay.from_predictions(y_test, y_pred, xticks_rotation=45)
+    plt.title("Matrice de confusion : Gradient Boosting")
+    plt.show()
+
+    return meilleur_modele, recherche.best_params_, f1_test
+
+
+
+```
+
+
+## FONCTION K-NN  (K-Nearest Neighbors )
+
+```{python}
+
+## FONCTION K-NN  (K-Nearest Neighbors )
+
+from sklearn.metrics import ConfusionMatrixDisplay, classification_report, f1_score
+from sklearn.model_selection import GridSearchCV, StratifiedGroupKFold
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+import matplotlib.pyplot as plt
+
+
+def F_K_NN(X_train, X_test, y_train, y_test, groupes_train, n_plis=3, graine=42):
+    """Optimise un k-NN et l'évalue sur X_test, y_test."""
+    grille = {"kneighborsclassifier__n_neighbors": [3, 5, 11, 21]}
+
+    pipeline = make_pipeline(StandardScaler(), KNeighborsClassifier())
+
+    recherche = GridSearchCV(
+        pipeline,
+        param_grid=grille,
+        scoring="f1_macro",
+        cv=StratifiedGroupKFold(n_splits=n_plis, shuffle=True, random_state=graine),
+        n_jobs=-1,
+    )
+    recherche.fit(X_train, y_train, groups=groupes_train)
+
+    meilleur_modele = recherche.best_estimator_
+    y_pred = meilleur_modele.predict(X_test)
+    f1_test = f1_score(y_test, y_pred, average="macro")
+
+    print("Meilleurs paramètres :", recherche.best_params_)
+    print(f"F1 macro en validation : {recherche.best_score_:.3f}")
+    print(f"F1 macro sur le test : {f1_test:.3f}\n")
+    print(classification_report(y_test, y_pred, zero_division=0))
+    print("Taux de défauts manqués :", round(F_TAUX_DEFAUTS_MANQUES(y_test, y_pred), 3))
+    print("Taux de fausses alertes :", round(F_TAUX_FAUSSES_ALERTES(y_test, y_pred), 3))
+    print("F2 détection :", round(F_F2_DETECTION(y_test, y_pred), 3))
+    
+    print("FNR (False Negative Rate) :")
+    fnr_knn = F_FNR(y_test, y_pred, classe_saine="Sain")
+    
+    ConfusionMatrixDisplay.from_predictions(y_test, y_pred, xticks_rotation=45)
+    plt.title("Matrice de confusion : K-NN_Nearest Neighbors")
+    plt.show()
+
+    return meilleur_modele, recherche.best_params_, f1_test
+
+
+
+
+
+```
+
+
+
+APPEL DES FONCTIONS: 
+                     TRAIN TEST SPLIT 
+                     RANDOM FOREST POUR LA CLASSE DEFAUT
+
+
+
+```{python}
+#  appeler fonction TRAIN TEST SPLIT
+
+X_train, X_test, y_train, y_test, groupes_train = F_TRAIN_TEST_SPLIT(table_indicateurs_classe)
+
+X_train.head()
+
+```
+
+
+
+```{python}
+#  appeler fonction RANDOM FOREST
+
+modele_rf, params_rf, f1_rf = F_RANDOM_FOREST(
+    X_train, X_test, y_train, y_test, groupes_train
+)
+
+```
+
+
+```{python}
+#  appeler fonction LOGISTIC REGRESSION
+
+modele_lr, params_lr, f1_lr = F_LOGISTIC_REGRESSION(
+    X_train, X_test, y_train, y_test, groupes_train
+)
+
+```
+
+
+
+```{python}
+#  appeler fonction SVM Noyau RBF
+
+modele_svm, params_svm, f1_svm = F_SVM_noyau_RBF(
+    X_train, X_test, y_train, y_test, groupes_train
+)
+
+```
+
+
+
+```{python}
+#  appeler fonction GRADIENT_BOOSTING
+
+modele_gb, params_gb, f1_gb = F_GRADIENT_BOOSTING(
+    X_train, X_test, y_train, y_test, groupes_train
+)
+
+```
+
+```{python}
+#  appeler fonction K-NN ()
+
+modele_knn, params_knn, f1_knn = F_K_NN(
+    X_train, X_test, y_train, y_test, groupes_train
+)
+
+```
+
