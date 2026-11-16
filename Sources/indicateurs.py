@@ -46,15 +46,15 @@ def indicateurs_spectraux(x, fs, rpm, roulement="DE",
     for F in RAIES:
         res[f"ratio_{F}"] = res[f"amp_{F}_1"] / total if total > 0 else 0.0
     # Suppression de f_pic car il indique des fréquences brutes, et n'est donc pas transposable sur différents roulement
-    # dans_bande = freqs <= 1000
-    # res["f_pic"] = float(freqs[dans_bande][np.argmax(amp[dans_bande])])
+    dans_bande = freqs <= 1000
+    res["f_pic"] = float(freqs[dans_bande][np.argmax(amp[dans_bande])])
     return res
 
 
 COLONNES_TEMPORELS = ["RMS", "Pic", "Crete", "Kurtosis"]
 COLONNES_SPECTRAUX = ([f"amp_{F}_{k}" for F in RAIES for k in HARMONIQUES]
                       + [f"ratio_{F}" for F in RAIES] 
-                      # + ["f_pic"] # Suppression de f_pic car il indique des fréquences brutes, et n'est donc pas transposable sur différents roulement
+                      + ["f_pic"] # Suppression de f_pic car il indique des fréquences brutes, et n'est donc pas transposable sur différents roulement
                     )
 
 

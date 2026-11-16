@@ -462,7 +462,7 @@ def F_K_NN(X_train, X_test, y_train, y_test, groupes_train, n_plis=3, graine=42)
 
 #  appeler fonction LOGISTIC REGRESSION
 
-modele_lr, params_lr, f1_lr = F_LOGISTIC_REGRESSION(X_train, X_test, y_train, y_test, groupes_train)
+# modele_lr, params_lr, f1_lr = F_LOGISTIC_REGRESSION(X_train, X_test, y_train, y_test, groupes_train)
 
 
 
