@@ -228,12 +228,12 @@ Sont écartés : le diamètre 0,028" (pas de défaut de bague extérieure, autre
 # Chaque critère accepte une valeur ou un tuple ; None = pas de filtre.
 # Ici : 12 kHz côté entraînement, défauts IR/B/OR de 0,007" à 0,021",
 # bague extérieure en position 6 h, charges 0 à 3 HP, + les 4 sains.
-selection = src_data.selectionner(sources=("12kDE",),
+selection = src_data.selectionner(sources=("Normal", "12kDE",),
                                   defauts=("IR", "B", "OR"),
                                   diametres=(7, 14, 21),
                                   positions_or=("6",),
-                                  charges=(0, 1, 2, 3),
-                                  avec_sains=True)
+                                  charges=(0, 1, 2, 3)
+                                )
 selection.groupby(["defaut", "diametre_mils"]).size().unstack(fill_value=0)
 ```
 
@@ -1070,181 +1070,6 @@ plt.show()
 ## Conclusion
 
 Le défaut de bague intérieure se manifeste par des **chocs périodiques** à BPFI, invisibles sur la FFT brute mais nets sur le **spectre d'enveloppe** après traitement.
-
-# Préparation des données pour la modélisation
-
-La table des indicateurs (4 temporels + (4x4 + 1) 17 spectraux = 21 features) est prête pour l'apprentissage. Deux précautions, déjà identifiées dans l'analyse de variabilité :
-
-- **Séparation par fichier, jamais par fenêtre** : la majorité de la variabilité est inter-fichiers, les fenêtres d'un même enregistrement sont des pseudo-réplicats, c'est à dire qu'ils portent sensiblement les mêmes informations. On répartit les *fichiers* entre train et test, puis on applique le split par fenêtre à l'intérieur de chaque fichier.
-- **Standardisation sur le train uniquement** : moyenne et écart-type sont calculés sur l'apprentissage, puis appliqués au test (équivalent de `StandardScaler`, sans dépendance sklearn).
-
-```{python}
-#| label: preparation-modeling
-#| code-summary: "Split par fichier + standardisation"
-#| tbl-cap: "Répartition des fichiers entre apprentissage et test."
-
-from Sources.features import preparer_modeling_strat
-
-X_train, X_test, y_train, y_test, g_train, g_test = preparer_modeling_strat(
-    table, COLONNES_INDICATEURS)
-
-pd.DataFrame({
-    "split": ["train", "test"],
-    "fichiers": [g_train.nunique(), g_test.nunique()],
-    "fenêtres": [len(X_train), len(X_test)],
-    "classes présentes": [", ".join(sorted(y_train.unique())),
-                          ", ".join(sorted(y_test.unique()))],
-})
-```
-
-```{python}
-#| label: check-fuite
-#| include: false
-# Contrôle : aucun fichier ne se retrouve des deux côtés du split
-assert set(g_train.unique()) & set(g_test.unique()) == set()
-```
-
-La table standardisée (avec la colonne `split`) est également sauvegardée pour la suite (modélisation) :
-
-```{python}
-#| label: sauvegarde-modeling
-#| include: false
-table_modeling = table.copy()
-table_modeling[COLONNES_INDICATEURS] = pd.concat([X_train, X_test]).sort_index()
-table_modeling["split"] = np.where(table_modeling["fichier"].isin(g_test.unique()),
-                                   "test", "train")
-sauvegarder_table(table_modeling, "table_modeling.csv")
-```
-
-
-
-```{python}
-#| label: Visu des données pour la modélisation
-
-table_modeling.loc[table_modeling["split"] == "test", COLONNES_INDICATEURS]
-```
-
-
-
-```{python}
-#| label: regression logistique
-from sklearn import linear_model
-
-X_train = table_modeling.loc[table_modeling["split"] == "train", COLONNES_INDICATEURS]
-X_test  = table_modeling.loc[table_modeling["split"] == "test", COLONNES_INDICATEURS]
-y_train = table_modeling.loc[table_modeling["split"] == "train", "classe"]
-y_test  = table_modeling.loc[table_modeling["split"] == "test", "classe"]
-
-logreg = linear_model.LogisticRegression(max_iter=500, random_state=24)
-logregb = linear_model.LogisticRegression(max_iter=500, random_state=24, class_weight="balanced") ##  >> Pour gérer le déséquilibre de classes
-
-logreg.fit(X_train, y_train)
-logregb.fit(X_train, y_train)
-
-y_pred = logreg.predict(X_test)
-y_predb = logregb.predict(X_test)
-cm = pd.crosstab(y_test, y_pred, rownames=['Classe réelle'], colnames=['Classe prédite'])
-cmb = pd.crosstab(y_test, y_predb, rownames=['Classe réelle'], colnames=['Classe prédite'])
-```
-
-
-```{python}
-#| label: regression logistique
-from sklearn.metrics import classification_report
-print("###### LogReg standard ######")
-display(cm)
-print(classification_report(y_test, y_pred))
-
-print("###### LogReg class_weight=balanced ######")
-display(cmb)
-print(classification_report(y_test, y_predb))
-
-```
-
-
-```{python}
-
-from sklearn.metrics import roc_curve, auc, roc_auc_score
-from sklearn.preprocessing import label_binarize
-import matplotlib.pyplot as plt
-
-# Probabilités prédites (une colonne par classe)
-probs = logreg.predict_proba(X_test)
-
-# Vraies classes en 0/1 (une colonne par classe)
-classes = logreg.classes_
-y_bin = label_binarize(y_test, classes=classes)
-
-# Courbes ROC par classe
-plt.figure(figsize=(8, 6))
-for i, c in enumerate(classes):
-    fpr, tpr, _ = roc_curve(y_bin[:, i], probs[:, i])
-    plt.plot(fpr, tpr, label=f"{c} (AUC = {auc(fpr, tpr):.2f})")
-
-plt.plot([0, 1], [0, 1], "k--", label="hasard")
-plt.xlabel("Faux positifs")
-plt.ylabel("Vrais positifs")
-plt.title("Courbes ROC — une par classe")
-plt.legend()
-plt.show()
-
-```
-
-
-
-```{python}
-#| label: arbre de décision : def+fit
-from sklearn.tree import DecisionTreeClassifier
-
-Model_tree = DecisionTreeClassifier(criterion='entropy', max_depth=4, random_state=123)
-Model_tree.fit(X_train, y_train)
-y_pred = Model_tree.predict(X_test)
-```
-
-```{python}
-#| label: arbre de décision : results
-
-pd.crosstab(y_test, y_pred, rownames=['real'], colnames=['pred'])
-
-feats = {}
-for feature, importance in zip(X_test.columns, Model_tree.feature_importances_):
-    feats[feature] = importance
-importances = pd.DataFrame.from_dict(feats, orient='index')
-importances = importances.rename(columns={0:'Importance'})
-importances = importances.sort_values('Importance', ascending=False)
-display(importances[importances['Importance'] != 0])
-display(importances[importances['Importance'] == 0])
-
-print("Enseignements :")
-print("> Déséquilibre du dataset à gérer (beaucoup de défauts, peu de sain)")
-print("> Répartition entre le train et le test :")
-print(">>> chaque type de défaut doit être coté train et test pour que le modèle puisse apprendre et prédire correctement")
-print(">>> Un même fichier ne doit pas avoir de fenêtre coté train et test (pseudo réplicats : fuite de données)")
-print("> Les indicateurs (features) doivent être construits avec beaucoup de soin pour que le modèle puisse apprendre correctement")
-
-```
-
-
-```{python}
-from sklearn.tree import plot_tree
-plt.figure(figsize=(16, 12))
-plot_tree(Model_tree, feature_names=X_test.columns, class_names=Model_tree.classes_, filled=True, fontsize=8, proportion=True);
-```
-
-
-```{python}
-#| label: arbre de décision : results
-
-catalogue
-"""
-tab = catalogue.groupby(["source", "defaut"]).size().unstack(fill_value=0)
-tab = tab[["Sain", "IR", "B", "OR"]].reindex(["Normal", "12kDE", "48kDE", "12kFE"])
-tab = tab.reset_index().rename(columns={"source": "Source", "IR": "Bague int. (IR)",
-                                        "B": "Bille (B)", "OR": "Bague ext. (OR)"})
-"""
-Markdown(tab.to_markdown(index=False))
-```
-
 
 
 # Points d'attentions
