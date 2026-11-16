@@ -1115,6 +1115,8 @@ trois premières harmoniques de chaque fréquence caractéristique. Cette
 amplitude est rapportée au niveau de bruit du spectre (rapport signal sur
 bruit), afin d'être comparable d'un enregistrement à l'autre.
 
+Le RMS_bande est la valeur efficace du signal filtré entre 2 et 5 kHz, bande où résonne la structure sous l’effet des chocs : il mesure l’énergie apportée par les impacts, indépendamment des vibrations de fonctionnement normal du moteur.
+
 ```{python}
 #| label: fonctions-spectrales
 from scipy.signal import butter, sosfiltfilt, hilbert
@@ -1129,7 +1131,7 @@ def enveloppe(x, fs, bande=BANDE):
     env = np.abs(hilbert(x_filt))
     return x_filt, env
 
-def indicateurs_spectraux(x_filt, env, fs, rpm):
+def indicateurs_spectraux(x_filt, env, fs, rpm, coefs=COEF_DE):
     """Indicateurs d'une fenêtre : énergie de la bande et rapports signal/bruit
     du spectre d'enveloppe aux fréquences BPFI, BPFO et BSF."""
     n = len(env)
@@ -1138,7 +1140,7 @@ def indicateurs_spectraux(x_filt, env, fs, rpm):
     fond = np.median(amp[(freqs >= 10) & (freqs <= 1000)])   # niveau de bruit
     f_rot = rpm / 60
     res = {"RMS_bande": np.sqrt(np.mean(x_filt ** 2))}
-    for nom, coef in COEF_DE.items():
+    for nom, coef in coefs.items():
         total = 0.0
         for k in (1, 2, 3):                                   # 3 premières harmoniques
             f = k * coef * f_rot
@@ -1191,75 +1193,3 @@ signature à la fréquence BSF.
 
 Indicateurs temporels et fréquentiels apparaissent donc complémentaires.
 
-# Premier modèle de classification
-
-## Méthode
-
-On cherche à prédire la **localisation du défaut** (Sain, IR, B, OR) à partir
-des huit indicateurs temporels et fréquentiels. Le modèle est une forêt
-aléatoire, avec des poids de classes équilibrés pour compenser le nombre plus
-élevé de fenêtres saines.
-
-Pour éviter que le modèle reconnaisse simplement les enregistrements, la
-validation se fait **par charge** : le modèle est entraîné sur trois charges
-et évalué sur la quatrième, qu'il n'a jamais vue. L'opération est répétée
-pour chacune des quatre charges.
-
-
-```{python}
-#| label: tbl-validation-charge
-#| tbl-cap: "Exactitude du modèle pour chaque charge laissée de côté."
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, confusion_matrix
-
-VARIABLES = ["RMS", "Pic", "Crete", "Kurtosis",
-             "RMS_bande", "Env_BPFI", "Env_BPFO", "Env_BSF"]
-CIBLE = "defaut"
-ORDRE_LOC = ["Sain", "IR", "B", "OR"]
-
-scores, predictions = [], []
-for charge_test in range(4):
-    app  = table[table["charge_hp"] != charge_test]     # apprentissage : 3 charges
-    test = table[table["charge_hp"] == charge_test]     # test : la 4e charge
-    modele = RandomForestClassifier(n_estimators=300, class_weight="balanced",
-                                    random_state=0)
-    modele.fit(app[VARIABLES], app[CIBLE])
-    pred = modele.predict(test[VARIABLES])
-    scores.append({"Charge testée (HP)": charge_test,
-                   "Fenêtres testées": len(test),
-                   "Exactitude (%)": round(100 * accuracy_score(test[CIBLE], pred), 1)})
-    predictions.append(test.assign(prediction=pred))
-
-predictions = pd.concat(predictions)
-Markdown(pd.DataFrame(scores).to_markdown(index=False))
-```
-
-Le modèle classe correctement 97 à 99,8 % des fenêtres de la charge laissée
-de côté. Il est donc robuste à la charge, ce qui est cohérent avec le faible
-effet de la charge observé sur les indicateurs. Ce résultat doit cependant
-être interprété avec prudence : pour une classe donnée, les quatre charges
-ont été enregistrées sur le même roulement. Le modèle est donc testé sur un
-roulement qu'il a déjà vu, dans des conditions légèrement différentes, et
-non sur un roulement nouveau.
-
-```{python}
-#| label: tbl-confusion
-#| tbl-cap: "Matrice de confusion, toutes charges de test confondues (nombre de fenêtres)."
-mc = pd.DataFrame(confusion_matrix(predictions[CIBLE], predictions["prediction"],
-                                   labels=ORDRE_LOC),
-                  index=ORDRE_LOC, columns=ORDRE_LOC)
-mc.index.name = "Réel \\ Prédit"
-Markdown(mc.reset_index().to_markdown(index=False))
-```
-
-
-Le roulement sain est parfaitement reconnu (aucune fausse alarme ni aucun
-défaut manqué), de même que les défauts de bague intérieure (99,7 %). Les
-erreurs se concentrent sur la confusion entre défauts de bille et de bague
-extérieure (42 des 45 fenêtres mal classées), cohérente avec les
-observations précédentes : le fichier B021 présente une signature BPFO, et
-le défaut OR014, sans signature ni énergie marquée, ressemble aux défauts
-de bille.
-
-1.  Construire un premier modèle de référence
-2.  Améliorer le feature engineering et tester d'autres modèles plus complexes

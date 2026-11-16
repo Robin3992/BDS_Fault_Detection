@@ -7,4 +7,5 @@ data/CWRU_data/
 data/cwru_cache/
 data/features/
 Codes/*.pdf
+.vdoc.*
 __pycache__/
