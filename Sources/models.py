@@ -80,6 +80,28 @@ def entrainer_comparer(modeles, X_train, y_train, X_test, y_test,
 
 
 
+# 3. Convolution 1 dimension : auto-encodeur
+import tensorflow as tf
+import keras
+from keras import layers
+
+def conv1d_ae(taille):
+    Input = keras.Input(shape=(taille, 1))
+    # Encodeur : 2 poolings
+    x = layers.Conv1D(32, 7, activation="relu", padding="same")(Input) 
+    x = layers.MaxPooling1D(2, padding="same")(x)                       
+    x = layers.Conv1D(16, 5, activation="relu", padding="same")(x)      
+    x = layers.MaxPooling1D(2, padding="same")(x)                       
+    latent = layers.Conv1D(8, 3, activation="relu", padding="same")(x)
+    # Decodeur : miroir exact
+    x = layers.Conv1D(16, 5, activation="relu", padding="same")(latent)  
+    x = layers.UpSampling1D(2)(x)                                         
+    x = layers.Conv1D(32, 7, activation="relu", padding="same")(x)        
+    x = layers.UpSampling1D(2)(x)                                       
+    sortie = layers.Conv1D(1, 7, padding="same")(x)           
+    modele = keras.Model(Input, sortie)
+    modele.compile(optimizer="adam", loss="mse")
+    return modele
 
 
 

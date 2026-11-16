@@ -1208,6 +1208,130 @@ plot_tree(Model_tree, feature_names=X_test.columns, class_names=Model_tree.class
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Auto-encodeur : détection d'anomalie
+### Principes
+
+Un auto-encodeur est un réseau de neurones composé de deux parties : un **encodeur**, qui compresse le signal d'entrée en un vecteur de petite taille (le *bottleneck*), et un **décodeur**, qui reconstruit le signal à partir de ce vecteur. Entraîné à minimiser l'erreur de reconstruction (MSE), il apprend à ne retenir que l'essentiel du signal.
+
+L'astuce pour la détection de défaut : on l'entraîne **uniquement sur des signaux sains**. Le modèle apprend donc à reconstruire « ce qu'est un roulement sain ». À l'inverse, un signal contenant un défaut (chocs impulsionnels jamais vus à l'entraînement) est mal reconstruit : **l'erreur de reconstruction (MSE) par fenêtre sert de score d'anomalie**. C'est une approche non supervisée : aucun défaut n'est nécessaire pour apprendre, ce qui correspond à la réalité industrielle (les pannes sont rares).
+
+### Préparation des données
+
+On travaille sur le jeu CWRU 12 kHz côté moteur (DE) : 40 fichiers (4 sains `Normal` + 36 défauts IR/B/OR, diamètres 7/14/21 mils, 4 charges).
+
+1. **Fenêtrage avec recouvrement** : le signal continu est découpé en fenêtres de `DUREE_FENETRE/2 = 0,1 s` (1200 échantillons à 12 kHz ≈ 3 tours d'arbre, assez pour contenir plusieurs chocs), avec un **recouvrement de 50 %**. Sans recouvrement, un choc tombant à cheval sur deux fenêtres serait vu « à moitié » dans chacune ; avec recouvrement, chaque événement apparaît complet dans au moins une fenêtre.
+2. **Normalisation par fenêtre** : chaque fenêtre est centrée-réduite (moyenne 0, écart-type 1). L'amplitude absolue du signal dépend de la charge (0–3 HP) ; sans normalisation, le modèle confondrait « changement de charge » et « défaut ». On veut apprendre la *forme* du signal (les chocs), pas son niveau.
+3. **Split par fichier (anti-fuite)** : 75 % train / 25 % test, en regroupant par fichier (`GroupShuffleSplit` sur `fichier`) : jamais de fenêtres d'un même enregistrement des deux côtés, sinon on aurait une fuite de donnée.
+4. **Train = sains uniquement** : seules les fenêtres des fichiers sain du train servent à l'entraînement.
+
+### Le modèle Conv1D-AE
+
+Le signal vibratoire est une série 1D où la signature du défaut est un **motif local** (chocs périodiques) : les convolutions 1D sont naturellement adaptées (poids partagés, invariantes à la position). L'architecture est une pyramide symétrique :
+
+- encodeur : `Conv1D(32, noyau 7) → MaxPool(2) → Conv1D(16, noyau 5) → MaxPool(2) → Conv1D(8, noyau 3)` = bottleneck (résolution temporelle ÷4) ;
+- décodeur : miroir exact (`UpSampling1D(2)` ×2) → `Conv1D(1, noyau 7)` en sortie (1 canal, même longueur).
+
+Choix justifiés : noyaux **impairs** + `padding="same"` → alignement temporel parfait entre entrée et sortie (critique, car la MSE se calcule point à point) ; noyau 7 ≈ 0,6 ms à 12 kHz → englobe un choc entier ; le bottleneck force le réseau à ne retenir que les structures régulières du signal sain, un choc isolé ne « passe » pas. Perte = **MSE** (pénalise fortement les gros écarts = les chocs), optimiseur Adam, `EarlyStopping` sur `val_loss` (patience 5), batch 64, 50 époques max.
+
+### Tests
+
+- **Seuil d'alarme** : percentile 99 des scores des fenêtres saines du train (~1 % de fausses alarmes théorique), appliqué tel quel au test.
+- **Métriques** : ROC-AUC (séparation sains/défauts indépendante du seuil), matrice de confusion 2×2 (sain/défaut), FPR (fausses alarmes) et FNR (défauts manqués), tableau croisé par classe (Sain/IR/B/OR).
+- **Figures** : courbe loss/val_loss, distribution du score par classe, score dans le temps (sain vs défaut), entrée vs reconstruction pour une fenêtre saine et une fenêtre défaut.
+
+### Résultats
+
+L'AE atteint une séparation sains/défauts quasi parfaite sur le test (ROC-AUC ≈ 1,000) : les défauts se reconstruisent nettement moins bien que les sains (MSE plus élevée), le seuil au percentile 99 sépare les deux distributions. Les fenêtres saines sont reconstruites fidèlement, les fenêtres défaut présentent de forts pics d'erreur aux chocs.
+
+**Limites à discuter** : CWRU est un benchmark « facile » (défauts artificiels marqués) ; les sains du test (charges 1 et 3 HP) n'ont pas été vus à l'entraînement, un FPR réel légèrement supérieur au 1 % théorique est donc attendu (changement de régime ≠ défaut) ; la détection selon la sévérité (7/14/21 mils) et la robustesse au bruit restent à évaluer.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Points d'attentions
 
 - La fréquence d'échantillonnage des fichiers CWRU n'est pas documentée de façon fiable dans les fichiers eux-mêmes : le catalogue repose sur les données textuelles du site. La **vérification de la fréquence d'échantillonnage** de chaque signal pourrait permettre d'analyser d'autres données sans avoir cette information.
