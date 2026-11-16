@@ -1052,6 +1052,8 @@ trois premières harmoniques de chaque fréquence caractéristique. Cette
 amplitude est rapportée au niveau de bruit du spectre (rapport signal sur
 bruit), afin d'être comparable d'un enregistrement à l'autre.
 
+Le RMS_bande est la valeur efficace du signal filtré entre 2 et 5 kHz, bande où résonne la structure sous l’effet des chocs : il mesure l’énergie apportée par les impacts, indépendamment des vibrations de fonctionnement normal du moteur.
+
 ```{python}
 #| label: fonctions-spectrales
 from scipy.signal import butter, sosfiltfilt, hilbert
@@ -1066,7 +1068,7 @@ def enveloppe(x, fs, bande=BANDE):
     env = np.abs(hilbert(x_filt))
     return x_filt, env
 
-def indicateurs_spectraux(x_filt, env, fs, rpm):
+def indicateurs_spectraux(x_filt, env, fs, rpm, coefs=COEF_DE):
     """Indicateurs d'une fenêtre : énergie de la bande et rapports signal/bruit
     du spectre d'enveloppe aux fréquences BPFI, BPFO et BSF."""
     n = len(env)
@@ -1075,7 +1077,7 @@ def indicateurs_spectraux(x_filt, env, fs, rpm):
     fond = np.median(amp[(freqs >= 10) & (freqs <= 1000)])   # niveau de bruit
     f_rot = rpm / 60
     res = {"RMS_bande": np.sqrt(np.mean(x_filt ** 2))}
-    for nom, coef in COEF_DE.items():
+    for nom, coef in coefs.items():
         total = 0.0
         for k in (1, 2, 3):                                   # 3 premières harmoniques
             f = k * coef * f_rot
@@ -1198,3 +1200,209 @@ observations précédentes : le fichier B021 présente une signature BPFO, et
 le défaut OR014, sans signature ni énergie marquée, ressemble aux défauts
 de bille.
 
+# Prédiction de la dimension du défaut
+
+## Méthode
+
+On cherche à prédire le diamètre du défaut (0,007", 0,014" ou 0,021") à partir
+des huit indicateurs, sur les seules fenêtres défectueuses. Chaque diamètre
+correspondant, pour une localisation donnée, à un seul roulement, deux
+validations sont comparées :
+
+- **par charge** : le modèle est testé sur une charge qu'il n'a pas vue, mais
+  sur des roulements déjà vus à d'autres charges ;
+- **par localisation** : le modèle apprend les tailles sur deux localisations
+  et les prédit sur la troisième, c'est-à-dire sur des roulements qu'il n'a
+  jamais vus. Seule une signature de la taille commune aux différents types de
+  défaut permet de réussir ce test.
+
+
+
+```{python}
+#| label: fonction-diametre
+defauts = table[table["defaut"] != "Sain"]
+CIBLE_D = "diametre_mils"
+ORDRE_D = [7, 14, 21]
+
+def evaluer_diametre(groupe_test, nom_groupe):
+    """Validation croisée : chaque valeur de `groupe_test` est mise de côté à tour de rôle."""
+    scores, preds = [], []
+    for g in sorted(defauts[groupe_test].unique(), key=str):
+        app  = defauts[defauts[groupe_test] != g]
+        test = defauts[defauts[groupe_test] == g]
+        modele = RandomForestClassifier(n_estimators=300, random_state=0)
+        modele.fit(app[VARIABLES], app[CIBLE_D])
+        test = test.assign(prediction=modele.predict(test[VARIABLES]))
+        juste = test[CIBLE_D] == test["prediction"]
+        rappel = 100 * juste.groupby(test[CIBLE_D]).mean()
+        ligne = {nom_groupe: g, "Exactitude (%)": round(100 * juste.mean(), 1)}
+        ligne.update({f'0,{d:03d}"': round(rappel[d], 1) for d in ORDRE_D})
+        scores.append(ligne)
+        preds.append(test)
+    return pd.DataFrame(scores), pd.concat(preds)
+```
+
+## Résultats
+
+```{python}
+#| label: tbl-diametre-charge
+#| tbl-cap: "Prédiction du diamètre, validation par charge : exactitude globale et, pour chaque diamètre réel, pourcentage de fenêtres correctement reconnues."
+scores_dc, _ = evaluer_diametre("charge_hp", "Charge (HP)")
+Markdown(scores_dc.to_markdown(index=False))
+```
+
+En validation par charge, le diamètre est correctement prédit pour 96 à
+98,5 % des fenêtres. Les colonnes par diamètre donnent, pour chaque taille
+réelle, le pourcentage de fenêtres correctement reconnues : le diamètre de
+0,007" l'est presque systématiquement (98,7 à 100 %), et les rares erreurs
+portent sur les diamètres de 0,014" et 0,021" (au minimum 92 %). Ce test
+porte cependant sur des roulements déjà vus à d'autres charges : chaque
+diamètre correspondant à un seul roulement par localisation, le modèle
+peut identifier le roulement plutôt que la taille du défaut.
+
+```{python}
+#| label: tbl-diametre-localisation
+#| tbl-cap: "Prédiction du diamètre, validation par localisation (roulements jamais vus) : exactitude globale et par diamètre (%)."
+scores_dl, preds_dl = evaluer_diametre("defaut", "Localisation")
+Markdown(scores_dl.to_markdown(index=False))
+```
+
+Sur des roulements jamais vus, l'exactitude chute à 33 % pour les défauts
+de bille (niveau du hasard : toutes les fenêtres sont prédites 0,014"),
+59 % pour la bague intérieure et 50 % pour la bague extérieure. Le diamètre
+de 0,007" n'est jamais reconnu, alors qu'il l'était dans 98,7 à 100 % des
+cas en validation par charge : le modèle identifiait les roulements, et non
+la taille de leur défaut. Les quelques réussites s'expliquent par une
+coïncidence de niveaux d'énergie (défauts de 0,021" très énergétiques et de
+0,014" très faibles pour les bagues), qui ne constitue pas une signature
+physique de la taille.
+
+Avec un seul roulement par combinaison de localisation et de taille, les
+données CWRU ne permettent pas d'apprendre une relation généralisable entre
+le signal vibratoire et la dimension du défaut.
+
+```{python}
+#| label: tbl-diametre-confusion
+#| tbl-cap: "Matrice de confusion du diamètre, validation par localisation (nombre de fenêtres)."
+noms_d = [f'0,{d:03d}"' for d in ORDRE_D]
+mc_dl = pd.DataFrame(confusion_matrix(preds_dl[CIBLE_D], preds_dl["prediction"],
+                                      labels=ORDRE_D),
+                     index=noms_d, columns=noms_d)
+mc_dl.index.name = "Réel \\ Prédit"
+Markdown(mc_dl.reset_index().to_markdown(index=False))
+```
+
+La matrice de confusion confirme l'absence de signature de la taille.
+Aucune fenêtre de 0,007" n'est correctement classée : les deux tiers sont
+prédites 0,021" (défauts de bague, très énergétiques), le tiers restant
+0,014" (défauts de bille). Le modèle ne prédit d'ailleurs presque jamais
+0,007". Les bons classements apparents de 0,014" et 0,021" résultent de deux
+règles propres aux roulements de ce banc (forte énergie associée à 0,021",
+faible énergie ou défaut de bille associés à 0,014"), et non d'une relation
+physique entre le signal et la dimension du défaut.
+
+## Conclusion sur la dimension du défaut
+
+La dimension du défaut est prédite avec 96 à 98,5 % d'exactitude lorsque le
+modèle est évalué sur des roulements déjà vus, mais avec 47,5 % seulement sur
+des roulements nouveaux, pour un niveau de hasard de 33 %, et sans qu'aucune
+fenêtre de 0,007" ne soit reconnue. L'écart entre ces deux résultats mesure
+ce que le modèle avait appris par cœur.
+
+Dans le jeu CWRU, chaque combinaison de localisation et de diamètre
+correspond à un seul roulement : l'effet de la taille est confondu avec
+celui du roulement et de son montage. Ces données ne permettent donc pas
+d'estimer la dimension d'un défaut sur un roulement inconnu. Les modèles
+développés dans la suite du projet se limiteront à la détection et à la
+localisation du défaut ; l'estimation de la sévérité nécessitera des
+données comportant plusieurs roulements par taille, ou des essais de
+dégradation progressive.
+
+
+# Prédiction du diamètre sur un second roulement
+
+## Principe
+
+Les défauts ont aussi été créés sur le roulement côté ventilateur, un SKF 6203,
+avec les mêmes localisations et les mêmes diamètres. On dispose ainsi de deux
+roulements par combinaison de localisation et de diamètre. Le modèle apprend
+les diamètres sur le roulement côté entraînement, puis doit les retrouver sur
+le roulement côté ventilateur, qu'il n'a jamais vu, pour un même type de défaut.
+Chaque défaut est mesuré par l'accéléromètre le plus proche. L'analyse porte sur
+les défauts de bague intérieure et de bille, le plan étant incomplet pour la
+bague extérieure côté ventilateur.
+
+```{python}
+#| label: tables-de-fe
+COEF_FE = {"BPFI": 4.9469, "BPFO": 3.0530, "BSF": 3.9874}   # roulement SKF 6203
+
+def construire_table(sel, canal, coefs):
+    """Indicateurs temporels et fréquentiels par fenêtre, pour un canal donné."""
+    lignes = []
+    for nom, info in sel.iterrows():
+        s = charger(nom)
+        x, fs, rpm = s[canal], s["fs"], s["rpm"]
+        x_filt, env = enveloppe(x, fs)
+        taille = int(DUREE_FENETRE * fs)
+        for i in range(len(x) // taille):
+            sl = slice(i * taille, (i + 1) * taille)
+            res = {"fichier": nom, "fenetre": i, "canal": canal, **info.to_dict()}
+            res.update(indicateurs(x[sl]))
+            res.update(indicateurs_spectraux(x_filt[sl], env[sl], fs, rpm, coefs))
+            lignes.append(res)
+    return pd.DataFrame(lignes)
+
+base = catalogue["defaut"].isin(["IR", "B"]) & catalogue["diametre_mils"].isin([7, 14, 21])
+table_de = construire_table(catalogue[base & (catalogue["source"] == "12kDE")], "DE", COEF_DE)
+table_fe = construire_table(catalogue[base & (catalogue["source"] == "12kFE")], "FE", COEF_FE)
+```
+
+
+## Résultats
+
+```{python}
+#| label: tbl-diametre-fe
+#| tbl-cap: "Diamètre appris sur le roulement côté entraînement et prédit sur le roulement côté ventilateur : exactitude globale et, pour chaque diamètre réel, % de fenêtres bien reconnues."
+JEUX = {"Tous": ["RMS", "Pic", "Crete", "Kurtosis",
+                 "RMS_bande", "Env_BPFI", "Env_BPFO", "Env_BSF"],
+        "Sans unité": ["Crete", "Kurtosis", "Env_BPFI", "Env_BPFO", "Env_BSF"]}
+
+lignes = []
+for nom_jeu, var in JEUX.items():
+    for loc in ["IR", "B"]:
+        app  = table_de[table_de["defaut"] == loc]      # roulement côté entraînement
+        test = table_fe[table_fe["defaut"] == loc]      # roulement côté ventilateur
+        modele = RandomForestClassifier(n_estimators=300, random_state=0)
+        modele.fit(app[var], app["diametre_mils"])
+        test = test.assign(prediction=modele.predict(test[var]))
+        juste = test["diametre_mils"] == test["prediction"]
+        rappel = 100 * juste.groupby(test["diametre_mils"]).mean()
+        ligne = {"Indicateurs": nom_jeu, "Localisation": loc,
+                 "Exactitude (%)": round(100 * juste.mean(), 1)}
+        ligne.update({f'0,{d:03d}"': round(rappel[d], 1) for d in ORDRE_D})
+        lignes.append(ligne)
+
+Markdown(pd.DataFrame(lignes).to_markdown(index=False))
+```
+
+## Conclusion générale
+
+Sur les données CWRU, les indicateurs vibratoires distinguent sans erreur
+un roulement défectueux d'un roulement sain, grâce à l'énergie des chocs
+dans la bande de résonance de la structure. Ce résultat repose cependant
+sur un seul roulement sain : le principe de détection est établi, mais les
+seuils de décision sont propres à ce banc d'essai.
+
+La dimension du défaut, en revanche, ne peut pas être estimée sur un
+roulement inconnu : chaque taille correspondant à un seul roulement par
+localisation, son effet est confondu avec celui du roulement. Il s'agit
+d'une limite du plan d'expérience, et non d'une impossibilité physique.
+
+En pratique, ces résultats orientent vers une surveillance fondée sur
+l'évolution de chaque roulement par rapport à son propre état initial
+(détection d'écart à une ligne de base, à la manière d'une carte de
+contrôle), qui ne nécessite pas d'exemples de défauts. L'estimation de la
+sévérité ou de la durée de vie résiduelle nécessitera en revanche des
+essais de dégradation progressive sur plusieurs roulements, dans des
+conditions variées, afin d'apprendre une loi de dégradation commune que
+l'on ajustera ensuite à chaque nouveau roulement.
