@@ -1,10 +1,7 @@
-"""Modèles de classification et évaluation.
+###################################################################################################################################
+######################################################## ML Models ################################################################
+###################################################################################################################################
 
-Contient :
-  - evaluer_modele : métriques (accuracy, balanced accuracy, F1-macro),
-    rapport par classe et matrice de confusion
-  - entrainer_comparer : entraîne plusieurs modèles et renvoie un tableau comparatif
-"""
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -80,7 +77,12 @@ def entrainer_comparer(modeles, X_train, y_train, X_test, y_test,
 
 
 
-# 3. Convolution 1 dimension : auto-encodeur
+
+###################################################################################################################################
+######################################################## DL Models ################################################################
+###################################################################################################################################
+
+# Convolution 1 dimension : Auto-Encodeur
 import tensorflow as tf
 import keras
 from keras import layers
@@ -102,6 +104,35 @@ def conv1d_ae(taille):
     modele = keras.Model(Input, sortie)
     modele.compile(optimizer="adam", loss="mse")
     return modele
+
+
+
+
+# Fonction de visu de la courbe d'entrainement
+def Courbe_Entraintement (historique):
+    plt.figure(figsize=(10, 5))
+    plt.plot(historique.history["loss"], label="Perte (entraînement)", linewidth=2)
+    plt.plot(historique.history["val_loss"], label="Perte (validation)", linewidth=2)
+    plt.xlabel("Époque")
+    plt.ylabel("MSE")
+    plt.title("Courbe d'entraînement", fontsize=14, fontweight="bold")
+    plt.legend(fontsize=12)
+    plt.grid(True, alpha=0.3)
+    return plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
