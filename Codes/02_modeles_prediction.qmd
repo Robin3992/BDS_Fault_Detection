@@ -542,3 +542,105 @@ sévérité ou de la durée de vie résiduelle nécessitera en revanche des
 essais de dégradation progressive sur plusieurs roulements, dans des
 conditions variées, afin d'apprendre une loi de dégradation commune que
 l'on ajustera ensuite à chaque nouveau roulement.
+
+# Réseau de neurones convolutif (CNN 1D)
+
+<!-- Résultats issus du notebook Codes/07_cnn1d.ipynb (novembre 2026). À mettre à jour si le notebook est relancé. -->
+
+Les modèles précédents utilisent des indicateurs choisis à la main (RMS, kurtosis, enveloppe…). Un réseau de neurones convolutif part au contraire du **signal brut** et apprend lui-même les filtres utiles. La question posée est la même que pour la forêt aléatoire : **où se trouve le défaut ?** (Sain, IR, B ou OR), avec une validation par diamètre, c'est-à-dire sur des roulements que le modèle n'a jamais vus.
+
+Les calculs sont réalisés dans le notebook `Codes/07_cnn1d.ipynb`, car l'apprentissage prend plusieurs minutes et nécessite la bibliothèque PyTorch. Ce rapport en reprend les résultats.
+
+## Données et architecture
+
+Chaque enregistrement est découpé en fenêtres de 2 048 points consécutifs, soit 0,17 s ou environ 5 tours d'arbre à 1 797 tr/min. Les 40 enregistrements donnent 2 953 fenêtres. Chaque fenêtre est centrée et réduite : le réseau voit la **forme** du signal, pas son niveau. Chaque fenêtre reçoit l'étiquette de son enregistrement.
+
+::: {#tbl-cnn-architecture}
+
+| Étape | Opération | Sortie | Paramètres |
+|---|---|---|---:|
+| Bloc 1 | 16 filtres de 64 points, pas de 8 | 16 × 128 | 1 072 |
+| Bloc 2 | 32 filtres de 3 points | 32 × 64 | 1 632 |
+| Bloc 3 | 64 filtres de 3 points | 64 × 32 | 6 336 |
+| Bloc 4 | 64 filtres de 3 points | 64 × 16 | 12 480 |
+| Moyenne | moyenne sur le temps | 64 | 0 |
+| Décision | couche linéaire | 4 | 260 |
+| **Total** | | | **21 780** |
+
+Architecture du réseau. Chaque bloc enchaîne convolution, normalisation, ReLU et réduction de moitié (MaxPool).
+
+:::
+
+Le premier filtre est long (64 points, soit 5,3 ms), de l'ordre de l'intervalle entre deux chocs d'un défaut de bague intérieure. Chaque valeur du dernier bloc couvre environ 34 ms de signal, soit un tour d'arbre. La moyenne sur le temps rend la décision indépendante de la position des chocs dans la fenêtre. La dernière couche est une régression logistique multinomiale sur les 64 caractéristiques apprises par le réseau.
+
+L'apprentissage minimise l'entropie croisée pondérée par classe (même pondération que `class_weight="balanced"` pour la forêt aléatoire), avec l'optimiseur Adam (taux d'apprentissage 10⁻³), par lots de 64 fenêtres, pendant 8 époques. Les poids initiaux et l'ordre des lots sont tirés au hasard : l'apprentissage est donc répété avec 3 graines aléatoires.
+
+## Résultats en validation par diamètre
+
+::: {#tbl-cnn-rappel}
+
+| Classe | Rappel moyen (%) | Écart-type (%) |
+|---|---:|---:|
+| Global | 72,0 | 3,6 |
+| Sain | 100,0 | 0,0 |
+| IR | 43,3 | 8,4 |
+| B | 99,5 | 0,4 |
+| OR | 49,9 | 20,9 |
+
+Rappel du CNN par classe, en validation par diamètre. Moyenne et écart-type entre 3 graines.
+
+:::
+
+Le roulement sain est toujours reconnu. B l'est presque toujours, mais ce chiffre est trompeur : B sert de classe par défaut (voir plus bas). IR et OR sont reconnus environ une fois sur deux. Pour OR, le résultat varie fortement d'une graine à l'autre : relancer l'apprentissage suffit à faire passer la reconnaissance d'environ 30 % à 70 %. La forêt aléatoire n'a pas été évaluée sur les mêmes fenêtres, la comparaison directe reste donc à faire.
+
+## Ce que le réseau a appris
+
+![Réponse en fréquence des 16 filtres de la première couche (réseau entraîné sur toutes les fenêtres, graine 0, pour la visualisation uniquement). Zone orange : bande 2–5 kHz utilisée pour l'enveloppe.](../images/cnn_filtres.png){#fig-cnn-filtres width=100%}
+
+Plusieurs filtres ont un pic net vers 3,7 kHz et d'autres vers 2,5 kHz (@fig-cnn-filtres). Sans aucune indication sur les fréquences, le réseau a retrouvé la zone de résonance excitée par les chocs, à l'intérieur de la bande retenue pour l'analyse d'enveloppe. D'autres filtres écoutent des bandes plus basses (600 Hz et 1,3 kHz), probablement des modes de vibration du banc d'essai. Quelques-uns n'ont pas de pic dominant.
+
+![Spectre moyen des fenêtres normalisées, par classe.](../images/cnn_spectre_classes.png){#fig-cnn-spectre-classes width=100%}
+
+Le spectre moyen par classe explique ces choix (@fig-cnn-spectre-classes). Au-dessus de 2 kHz, les défauts dépassent le roulement sain d'un facteur 10 à 100. IR culmine vers 2,8–3,3 kHz, OR vers 3,4–3,5 kHz avec une seconde bosse propre vers 5,2 kHz, et B a la même forme que les deux autres, à un niveau 3 à 5 fois plus bas. Ce qui distingue physiquement IR et OR, le rythme des chocs (BPFI ≈ 162 Hz, BPFO ≈ 107 Hz), n'apparaît pas dans ce spectre : il n'est visible que dans le spectre de l'enveloppe.
+
+## Pourquoi le réseau ne généralise pas
+
+![Spectre moyen des fenêtres normalisées, par diamètre de défaut.](../images/cnn_spectre_diametres.png){#fig-cnn-spectre-diametres width=100%}
+
+Le spectre change d'un diamètre à l'autre de façon irrégulière (@fig-cnn-spectre-diametres). B est très homogène, mais OR 0,014" est environ dix fois plus faible que OR 0,007" et 0,021" dans la zone de résonance. La taille du défaut n'est pas une échelle de gravité régulière : chaque diamètre correspond à un autre roulement, monté séparément.
+
+Pour comprendre l'échec, un réseau a été entraîné sans les roulements de 0,014" (graine 0), puis appliqué à ces roulements. En apprentissage, il classe correctement les 2 245 fenêtres, soit 100 %. En test, il classe **toutes** les fenêtres de 0,014" en B, y compris les IR et les OR, et avec une forte assurance (@tbl-cnn-probas).
+
+::: {#tbl-cnn-probas}
+
+| Enregistrement | Sain | IR | B | OR |
+|---|---:|---:|---:|---:|
+| B014, 0 HP | 0,00 | 0,01 | 0,99 | 0,00 |
+| B014, 1 HP | 0,00 | 0,00 | 0,99 | 0,00 |
+| B014, 2 HP | 0,00 | 0,01 | 0,99 | 0,00 |
+| B014, 3 HP | 0,00 | 0,01 | 0,98 | 0,01 |
+| IR014, 0 HP | 0,03 | 0,24 | 0,69 | 0,03 |
+| IR014, 1 HP | 0,01 | 0,04 | 0,93 | 0,02 |
+| IR014, 2 HP | 0,01 | 0,02 | 0,96 | 0,01 |
+| IR014, 3 HP | 0,00 | 0,01 | 0,98 | 0,01 |
+| OR014, 0 HP | 0,00 | 0,00 | 0,99 | 0,00 |
+| OR014, 1 HP | 0,00 | 0,00 | 0,99 | 0,00 |
+| OR014, 2 HP | 0,00 | 0,00 | 0,99 | 0,00 |
+| OR014, 3 HP | 0,00 | 0,01 | 0,98 | 0,01 |
+
+Probabilités moyennes prédites pour les roulements de 0,014", avec un réseau entraîné sur les diamètres 0,007" et 0,021".
+
+:::
+
+L'explication tient au plan d'expérience. Chaque combinaison localisation × diamètre correspond à **un seul roulement**, mesuré à 4 charges. Pour apprendre ce qu'est un défaut de bague intérieure, le réseau ne dispose ici que de deux roulements (IR007 et IR021). Avec environ 21 800 paramètres, il apprend les particularités de ces roulements plutôt que ce qu'ils ont en commun avec un roulement nouveau. Les quelque 470 fenêtres par classe donnent une illusion de taille d'échantillon : c'est la pseudo-réplication déjà mesurée dans l'analyse exploratoire, où 98,9 % de la variance du RMS se situe entre enregistrements.
+
+Une probabilité de 0,99 ne signifie pas une certitude. La sortie du réseau mesure la distance aux frontières apprises, et un signal inconnu peut tomber loin à l'intérieur d'une région. On ne peut donc pas utiliser la confiance du réseau pour signaler un cas douteux : un seuil à 0,8 n'aurait signalé qu'un enregistrement sur douze.
+
+## Conclusion
+
+1. Le CNN apprend parfaitement les roulements qu'il voit (100 % en apprentissage).
+2. Ses filtres retrouvent des bandes physiquement pertinentes, en particulier la résonance vers 3,7 kHz.
+3. Il ne généralise pas à un roulement nouveau. La limite vient du plan d'expérience (deux roulements par classe), et non de l'architecture : aucun réglage ne peut la lever.
+4. Quand il se trompe, il le fait avec une confiance proche de 1, sans aucun signal d'alerte.
+
+Trois pistes en découlent : comparer avec la forêt aléatoire sur les mêmes fenêtres ; ajouter un contrôle de nouveauté (T² de Hotelling, autoencodeur) qui signale un signal ne ressemblant à aucun roulement connu ; travailler sur un jeu comprenant davantage de roulements par classe, comme celui de l'université de Paderborn (32 roulements, dont 14 à défauts réels).
