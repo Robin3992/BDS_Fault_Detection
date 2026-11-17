@@ -655,53 +655,64 @@ Trois pistes en découlent : comparer avec la forêt aléatoire sur les mêmes f
 
 ## Auto-encodeur : détection d'anomalie
 
+<!-- Résultats issus des notebooks Codes/Robin/3.DL/1.AutoEncoder.ipynb et
+     Codes/Robin/3.DL/2.AE_Tests_Robustesse.ipynb. À mettre à jour si les notebooks sont relancés. -->
+
 ### Principes
 
-Un auto-encodeur (AE) est un réseau composé d'un **encodeur**, qui compresse le signal en un vecteur réduit (le *bottleneck*), et d'un **décodeur**, qui reconstruit le signal à partir de ce vecteur. Entraîné à minimiser l'erreur de reconstruction (MSE), il apprend à ne retenir que l'essentiel du signal.
+Un AE est un réseau de neurone composé d'un **encodeur**, qui compresse le signal en un vecteur réduit (le *bottleneck*), et d'un **décodeur**, qui reconstruit le signal à partir de ce vecteur. Entraîné à minimiser l'erreur de reconstruction (MSE), il apprend à ne retenir que l'essentiel d'un signal.
 
-L'astuce pour la détection de défaut : on l'entraîne **uniquement sur des signaux sains**. Il apprend alors « à quoi ressemble un roulement sain ». Un signal défectueux (chocs impulsionnels jamais vus à l'entraînement) est mal reconstruit : **l'erreur de reconstruction (MSE) par fenêtre sert de score d'anomalie**. Approche non supervisée : aucun défaut n'est nécessaire pour apprendre, ce qui correspond à la réalité industrielle et à la conclusion du chapitre précédent (surveillance par rapport à une ligne de base).
+Pour la détection de défaut, on entraine le modèle **uniquement sur des signaux sains**. Il apprend alors "à quoi ressemble un roulement sain". Un signal défectueux (chocs jamais vus à l'entraînement) sera mal reconstruit : **l'erreur de reconstruction (MSE) par fenêtre sert de score d'anomalie**. C'est une approche non supervisée : aucun défaut n'est nécessaire pour apprendre, ce qui correspond davantage à la réalité industrielle, car il est facile d'enregistré le signal sain d'un roulement après son changement.
 
 ### Préparation des données
 
-Jeu CWRU 12 kHz côté moteur (DE). Fenêtrage en fenêtres de 0,1 s (1200 échantillons à 12 kHz, ~3 tours d'arbre) avec **recouvrement 50 %** (un choc à cheval sur deux fenêtres apparaît complet dans au moins l'une d'elles), **normalisation par fenêtre** (z-score : on gomme l'amplitude absolue, qui dépend de la charge, pour ne garder que la forme du signal), **split par fichier** (anti-fuite, 75/25), et entraînement sur les **sains du train uniquement**.
+1. Fenêtrage par recouvrement
+On créer des fenêtres dans le signal pour avoir d'avantage de données d'entrainement (comme précédement).
+On veille à avoir des fenêtres assez longue pour ne pas perdre d'informations
 
-### Le modèle Conv1D-AE 
+2. Le recouvrement sert à mieux capter les chocs :
+Sans recouvrement, un choc de défaut qui tomberait à cheval sur le partage de deux fenêtres est vue "à moitié" dans chaque fenêtre, le modèle verrait donc moins bien l'événement "choc". Avec du recouvrement, chaque événement apparaît complet dans au moins une fenêtre, on ne perd pas d'information.
 
-```{python}
-#| eval: false\ndef conv1d_ae(taille=SB.shape[1]):
-    Input = keras.Input(shape=(taille, 1))
-    # Encodeur : 2 poolings
-    x = layers.Conv1D(32, 7, activation="relu", padding="same")(Input)
-    x = layers.MaxPooling1D(2, padding="same")(x)
-    x = layers.Conv1D(16, 5, activation="relu", padding="same")(x)
-    x = layers.MaxPooling1D(2, padding="same")(x)
-    latent = layers.Conv1D(8, 3, activation="relu", padding="same")(x)
-    # Decodeur : miroir exact
-    x = layers.Conv1D(16, 5, activation="relu", padding="same")(latent)
-    x = layers.UpSampling1D(2)(x)
-    x = layers.Conv1D(32, 7, activation="relu", padding="same")(x)
-    x = layers.UpSampling1D(2)(x)
-    sortie = layers.Conv1D(1, 7, padding="same")(x)
-    modele = keras.Model(Input, sortie)
-    modele.compile(optimizer="adam", loss="mse")
-    return modele
+3. Normalisation
+On normalise le signal brut car l'amplitude peut varier (notamment avec la charge) et on cherche à capter les variations des signaux (les chocs), pas les valeurs absolues du signal.
+Si la charge augmente, l'amplitude du signal (de la fenêtre) augmente, et le modèle va détecter une variation et donc un défaut, hors l'augmentation de charge n'est pas un défaut !
 
-# Entraînement sur les seules fenêtres saines du train, EarlyStopping sur val_loss
-ES = EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True, min_delta=0.01)
-nhist = modele.fit(X_train_sain[..., None], X_train_sain[..., None],
-                  epochs=50, batch_size=64, validation_split=0.1, verbose=1, callbacks=[ES])
+4. Split train test
+On split par fichier (comme précédement), mais cette fois on ne garde que les signaux sains dans le train, c'est le principe de l'auto-encodeur.
 
-# Score d'anomalie = MSE de reconstruction par fenêtre ; seuil = p99 des sains du train\ndef score_anomalie(modele, SBNorm):
-    Xr = modele.predict(SBNorm[..., None], verbose=1)[..., 0]
-    return ((SBNorm - Xr) ** 2).mean(axis=1)
+### Le modèle Conv1D-AE
 
-infos["score"] = score_anomalie(modele, SBNorm)
-seuilPourcent = 99
-seuil = np.percentile(infos["score"].to_numpy()[i_train][sain[i_train]], seuilPourcent)
-infos["alarme"] = infos["score"] > seuil
-```
+::: {#tbl-ae-architecture}
 
-Pourquoi cette architecture : le signal vibratoire est une série 1D dont la signature de défaut est un **motif local** (chocs) → convolutions 1D naturelles. Noyaux impairs (7, 5, 3) + `padding="same"` → alignement temporel parfait entrée/sortie (la MSE se calcule point à point). Le bottleneck (2 poolings, résolution ÷4) force le réseau à ne retenir que les structures régulières du sain : un choc isolé ne « passe » pas.
+| Couche | Type | Sortie | Paramètres |
+|---|---|---|---:|
+| Entrée | InputLayer | (None, 1200, 1) | 0 |
+| conv1d | Conv1D, 32 filtres, noyau 7 | (None, 1200, 32) | 256 |
+| max_pooling1d | ÷2 | (None, 600, 32) | 0 |
+| conv1d_1 | Conv1D, 16 filtres, noyau 5 | (None, 600, 16) | 2 576 |
+| max_pooling1d_1 | ÷2 | (None, 300, 16) | 0 |
+| conv1d_2 | Conv1D, 8 filtres, noyau 3 — **bottleneck** | (None, 300, 8) | 392 |
+| conv1d_3 | Conv1D, 16 filtres, noyau 5 | (None, 300, 16) | 656 |
+| up_sampling1d | ×2 | (None, 600, 16) | 0 |
+| conv1d_4 | Conv1D, 32 filtres, noyau 7 | (None, 600, 32) | 3 616 |
+| up_sampling1d_1 | ×2 | (None, 1200, 32) | 0 |
+| conv1d_5 (sortie) | Conv1D, 1 filtre, noyau 7 | (None, 1200, 1) | 225 |
+| **Total** | | | **7 721** |
+
+Architecture du Conv1D-AE (`modele.summary()` du notebook `1.AutoEncoder.ipynb`) : 7 721 paramètres au total (30,16 Ko), tous entraînables. Le `None` en première position de chaque sortie est la dimension *batch*, laissée libre (le modèle accepte n'importe quel nombre de fenêtres d'un coup).
+
+:::
+
+**Pourquoi cette architecture ?**
+
+- Le signal vibratoire est une **série 1D** : à chaque instant, une seule valeur (l'amplitude). Une convolution 1D fait glisser un petit filtre le long de cet unique axe (le temps) — c'est exactement la bonne opération, contrairement à une couche dense qui traiterait chaque échantillon indépendamment.
+- La signature d'un défaut n'est pas le niveau du signal, mais des **chocs qui se répètent** à chaque passage sur le défaut (rythme BPFI/BPFO/BSF). Ce sont des motifs *locaux* et *répétés* : un filtre de convolution les détecte naturellement, car **le même kernel est appliqué à toutes les positions** (weight sharing) — un choc est reconnu partout pareil, et cela ne coûte que quelques paramètres.
+- Les **noyaux impairs (7, 5, 3)** avec `padding="same"` ont un centre bien défini : l'alignement temporel entre l'entrée et la sortie est parfait. C'est indispensable ici, car la MSE se calcule **point à point** entre signal d'entrée et reconstruction.
+- Le **bottleneck** (2 poolings = résolution temporelle ÷ 4, puis 8 filtres) est le goulot d'étranglement : toute l'information de la fenêtre doit tenir dans un résumé 4 fois plus grossier. Seules les structures **régulières** du signal sain y passent ; un choc isolé, trop bref pour ce résumé, est « oublié » — d'où la forte erreur de reconstruction sur les défauts.
+
+Pour l'entrainement, on ajoute un EarlyStopping : 
+`EarlyStopping(monitor="val_loss", patience=5, min_delta=0.01, restore_best_weights=True)` 
+Il arrête l'entraînement si `val_loss` n'améliore plus d'au moins 0,01 pendant 5 époques (les progrès sont minces après ~10 époques) et restaure les meilleurs paramètres.
 
 ### Résultats
 
@@ -711,39 +722,62 @@ Pourquoi cette architecture : le signal vibratoire est une série 1D dont la sig
 |----:|----------------------:|----------------------:|
 | 1.000 | 6.45 % | 0.00 % |
 
-La séparation sains/défauts est quasi parfaite (AUC = 1,000) ; au seuil p99, aucun défaut n'est manqué, et le FPR observé (6,45 %) reste de l'ordre du 1 % théorique (le p99 garantit 1 % sur le *train*, pas sur le test).
+La séparation sains/défauts est parfaite : AUC = 1,000 .
+Le seuil est définit à 99 percentiles du train (p99), c'est à dire à la limite hautes d'erreur, avec une marge de 1%.
+Aucun défaut n'est manqué (FNR=0%), par contre le taux de faux positif (FPR) observé à 6,45% est important mais reste de l'ordre du 1% théorique (le p99 garantit 1 % sur le *train*, pas sur le test).
 
-Courbe d'apprentissage (loss et val_loss descendent ensemble : pas de surapprentissage) :
+Courbe d'apprentissage : `loss` (train) et `val_loss` (validation) descendent ensemble, donc pas d(overfiting) (ce serait `val_loss` qui remonte) ; l'arrêt précoce intervient quand les progrès deviennent faibles :
 
-![](../images/AE_nb1_FitCourbe.png){fig-align="center"}
+![Courbes loss (entraînement) et val_loss (validation) du Conv1D-AE.](../images/AE_nb1_FitCourbe.png){#fig-ae-loss width=80% fig-align="center"}
 
-Distribution du score d'anomalie par classe sur le test, avec le seuil :
+Entrée vs reconstruction : à gauche une fenêtre **saine** (reconstruction fidèle, erreur faible), à droite une fenêtre **défaut** (les chocs ne sont pas reconstruits, erreur forte) :
 
-![](../images/AE_nb1_DensiteMSE.png){fig-align="center"}
+![Entrée (bleu) et reconstruction (jaune) pour une fenêtre saine (gauche) et une fenêtre défaut (droite) ; erreur absolue en dessous.](../images/AE_nb1_Reconstruction.png){#fig-ae-reconstruction width=100% fig-align="center"}
 
-Entrée vs reconstruction : fenêtre saine (bien reconstruite, erreur faible) et fenêtre défaut (chocs mal reconstruits, erreur forte) :
+Distribution du score d'anomalie (MSE par fenêtre) par classe sur le test : les défauts (IR, B, OR) ont des scores nettement plus hauts que le sain, et le seuil p99 (pointillé) les sépare :
 
-![](../images/AE_nb1_Reconstruction.png){fig-align="center"}
+![Distribution du score d'anomalie par classe sur le test, avec le seuil p99 du train en pointillé.](../images/AE_nb1_DensiteMSE.png){#fig-ae-densite width=80% fig-align="center"}
 
-### Robustesse à la charge
+### Test de robustesse à la charge
 
-Protocole inter-conditions : entraînement sur les charges 0, 1, 2 HP, test sur la charge 3 HP **jamais vue**, toutes sévérités (7/14/21/28 mils), comparaison brutes vs normalisées :
+Protocole inter-conditions (notebook `2.AE_Tests_Robustesse.ipynb`) : entraînement sur les charges 0, 1, 2 HP, test sur la charge 3 HP **jamais vue**, toutes sévérités (7/14/21/28 mils), comparaison brutes vs normalisées :
 
 | variante | seuil (p99) | AUC | FPR | FNR |
 |---|---:|---:|---:|---:|
 | Normalisé | 0.0297 | 1.0 | 1.49 % | 0.0 % |
 | Brut | 0.0011 | 1.0 | 97.90 % | 0.0 % |
 
-En brut, l'amplitude absolue (qui croît avec la charge) brouille la détection sur la charge 3 HP : FPR = 97,9 %. En normalisé, l'amplitude est gommée : FPR = 1,5 %. **La normalisation est essentielle dès que le régime varie.**
+En brut, l'amplitude absolue (qui croît avec la charge) brouille la détection sur la charge 3 HP : le seuil n'est plus cohérent, et la FPR explose : 97,9%. 
+En normalisé, l'amplitude est gommée : FPR = 1,5 %. **La normalisation est donc essentielle dès que la charge varie.**
 
-Scores par classe sur le test (charge 3 HP), brutes puis normalisées, avec la marge Δ = min défauts − max sains :
+Scores par classe sur le test (charge 3 HP), échelle logarithme. 
+Les pointillés marquent le **max des sains** (vert) et le **min des défauts** (rouge) 
+La marge 'Δ = min défauts − max sains' mesure la séparation (Δ > 0 = séparation parfaite). 
+Données **brutes** d'abord : les distributions se chevauchent, Δ est faible :
 
-![](../images/AE_nb2_Boxplot_Brute.png){fig-align="center"}
+![Scores par classe sur le test (charge 3 HP), données brutes, échelle log. Pointillés : max sains (vert) et min défauts (rouge).](../images/AE_nb2_Boxplot_Brute.png){#fig-ae-box-brut width=100% fig-align="center"}
 
-![](../images/AE_nb2_Boxplot_Norm.png){fig-align="center"}
+Puis données **normalisées** : la marge Δ est nettement plus grande, le seuil sépare sains et défauts :
 
-### Limites
+![Scores par classe sur le test (charge 3 HP), données normalisées, échelle log. Pointillés : max sains (vert) et min défauts (rouge).](../images/AE_nb2_Boxplot_Norm.png){#fig-ae-box-norm width=100% fig-align="center"}
 
-- CWRU est un banc « facile » (défauts artificiels marqués) : une AUC de 1,000 n'est pas une garantie industrielle ;
-- le seuil p99 est calibré sur le train : le FPR réel sur un test nouveau peut s'en écarter (changement de régime, bruit) ;
-- un seul AE par roulement/capteur : ici le canal DE du banc CWRU.
+
+### **Conclusion :**
+- La charge a une influence pour ce type de modèle. Il sera donc important de l'entrainer sur des données saines sous différentes charges pour avoir une bonne détection.
+- La normalisation des données permet de gommer l'effet charge, ce qui était un des aspects que nous voulions vérifier.
+- Aucun faux négatif : impératif pour de la détection d'anomalie : mieux vaut trop d'alertes qu'un casse.
+- Avec les données normalisées, le modèles identifie bien les défauts, même avec une faible sévérité.
+
+
+### **Limites :**
+
+Les données testées sont dans des conditions optimales : pas de bruit, défaut clairement marqué (même à faible sévérité), etc...
+En situation réelle, les conditions seront beaucoup plus difficiles, les résultats seront probablement moins bon.
+
+### **Suites possibles :**
+
+- Tester sur des données issues du milieu industriel
+- Améliorer l'étape de traitement de signal dans le préprocessing pour filtrer les parasites et le bruit
+- Améliorer la définition des paramètres notamment :
+    - Le seuil d'identification : joue sur le ratio **nombre alerte vs risque**
+    - La taille des fenêtres et le callback: joue sur le ratio **performance vs coût (de calcul)**
