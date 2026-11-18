@@ -2,7 +2,7 @@ Introduction Ce document présente:
 
 \* la création des jeux d'apprentissages. 
 
-\* l'apprentissage automatique (AutoML) pour la dectection de défauts avec RMS et Kurtosis
+\* l'apprentissage pour la dectection de défauts avec RMS et Kurtosis
 
 ```{python}
 
@@ -27,6 +27,63 @@ table_FE.to_csv(r"..\data\features\table_FE.csv", index=False)
 
 
 
+F_DEMARCHE_COMPLETE(DOSSIER / "table_DE.csv")
+│
+├── F_CHARGER_TABLE(chemin)                         → table
+│
+├── F_PROTOCOLES(table)                             → 4 protocoles
+│
+├── POUR CHAQUE PROTOCOLE  (×4)
+│   │   1. Aléatoire (fenêtres)
+│   │   2. Groupé par fichier
+│   │   3. Leave-one-load-out
+│   │   4. Leave-one-diameter-out
+│   │
+│   ├── F_TRAIN_TEST_SPLIT(table, decoupage, groupes)  → plis (4, ou 3 pour le protocole 4)
+│   │
+│   └── POUR CHAQUE MODÈLE de MODELES  (×5)
+│       │
+│       └── F_EVALUER_MODELE(nom, F_MODELE, table, plis, groupes_internes)
+│           │
+│           ├── POUR CHAQUE PLI  (×4 ou ×3)            ← boucle EXTERNE (évaluation)
+│           │   │
+│           │   ├── F_MODELE(graine)                   → (modèle, grille)
+│           │   │     ├── F_RANDOM_FOREST
+│           │   │     ├── F_LOGISTIC_REGRESSION
+│           │   │     ├── F_SVM_NOYAU_RBF
+│           │   │     ├── F_GRADIENT_BOOSTING
+│           │   │     └── F_K_NN
+│           │   │
+│           │   ├── GridSearchCV(...).fit(X_train, y_train)  ← boucle INTERNE (réglage)
+│           │   │     └── StratifiedKFold (protocole 1)
+│           │   │         ou StratifiedGroupKFold par fichier (protocoles 2, 3, 4)
+│           │   │
+│           │   ├── .predict(X_test)                   → prédictions du pli
+│           │   │
+│           │   └── F_SCORES(y_test, y_pred)
+│           │         ├── f1_score (macro)
+│           │         ├── balanced_accuracy_score
+│           │         ├── F_TAUX_DEFAUTS_MANQUES
+│           │         ├── F_TAUX_FAUSSES_ALERTES
+│           │         └── F_F2_DETECTION
+│           │
+│           ├── Vote majoritaire par fichier           → exactitude fichiers
+│           │
+│           └── SI protocole détaillé (par défaut : « 2. Groupé par fichier »)
+│                 ├── classification_report
+│                 ├── F_FNR  ──► F_TAUX_DEFAUTS_MANQUES
+│                 └── ConfusionMatrixDisplay
+│
+└── Tableau récapitulatif (pivot Modèle × Protocole, F1 macro)  → resultats (DataFrame)
+
+
+
+
+
+
+
+
+
 ## PARAMÈTRES GÉNÉRAUX
 
 ```{python}
@@ -37,19 +94,21 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-CHEMIN_TABLE = r"..\data\features\table_FE.csv"            # puis "table_FE.csv"
+#CHEMIN_TABLE = r"..\data\features\table_FE.csv"            # puis "table_FE.csv"
 
 # FEATURES     = ["RMS", "Pic", "Crete", "Kurtosis"]
-FEATURES = ["RMS",  "Kurtosis"]
-# FEATURES     = ["RMS", "Pic", "Crete", "Kurtosis", "RMS_bande",	"Env_BPFI",	"Env_BPFO",	"Env_BSF",	"Env_FTF"]
+# FEATURES = ["RMS",  "Kurtosis"]
+FEATURES     = ["RMS", "Pic", "Crete", "Kurtosis", "RMS_bande",	"Env_BPFI",	"Env_BPFO",	"Env_BSF",	"Env_FTF"]
 print("Features utilisées :", FEATURES)
 
-CIBLE        = "defaut"                  # Sain / IR / B / OR
-# CIBLE        = "classe"                 # Sain, B007,	B014,	B021,	IR007,	IR014,	IR021,	OR007,	OR014,	OR021
+#CIBLE        = "defaut"                  # Sain / IR / B / OR
+CIBLE        = "classe"                 # Sain, B007,	B014,	B021,	IR007,	IR014,	IR021,	OR007,	OR014,	OR021
+# CIBLE        = "diametre_mils"                 # 0 , 7, 14, 21
+print("Cible utilisée :", CIBLE)
 
 CLASSE_SAINE = "Sain"
 GRAINE       = 42
-N_PLIS       = 4                         # plis externes (évaluation)
+N_PLIS       = 4                         # plis externes, 4 max car 4 fichiers sains (évaluation)
 N_PLIS_INT   = 3                         # plis internes (réglage des hyperparamètres)
 ```
 
@@ -100,7 +159,7 @@ from sklearn.model_selection import (StratifiedKFold, StratifiedGroupKFold,
                                      LeaveOneGroupOut)
 
 def F_PROTOCOLES(table, n_plis=N_PLIS, graine=GRAINE):
-    """Les 4 protocoles du §7.2.
+    """Les 4 protocoles du.
 
     Chaque protocole = (découpage externe, groupes externes, groupes internes).
     groupes internes = None  -> le réglage interne découpe aussi au hasard (protocole naïf).
@@ -122,8 +181,8 @@ def F_PROTOCOLES(table, n_plis=N_PLIS, graine=GRAINE):
         table["diametre_mils"] > 0, table["charge_hp"].map(sain_vers_pli))
 
     return {
-        "1. Aléatoire (fenêtres)": (StratifiedKFold(n_plis, shuffle=True, random_state=graine),
-                                    None, None),
+        #"1. Aléatoire (fenêtres)": (StratifiedKFold(n_plis, shuffle=True, random_state=graine),
+        #                            None, None),
         "2. Groupé par fichier":   (StratifiedGroupKFold(n_plis, shuffle=True, random_state=graine),
                                     table["fichier"], table["fichier"]),
         "3. Leave-one-load-out":   (LeaveOneGroupOut(), table["charge_hp"], table["fichier"]),
@@ -202,11 +261,13 @@ def F_FNR(y_true, y_pred, classe_saine=CLASSE_SAINE):
 
 def F_SCORES(y_true, y_pred):
     """Toutes les métriques d'un pli, dans un dictionnaire."""
-    return {"F1 macro":          f1_score(y_true, y_pred, average="macro", zero_division=0),
-            "Balanced accuracy": balanced_accuracy_score(y_true, y_pred),
+    return {
+            #"Balanced accuracy": balanced_accuracy_score(y_true, y_pred),
             "Défauts manqués":   F_TAUX_DEFAUTS_MANQUES(y_true, y_pred),
             "Fausses alertes":   F_TAUX_FAUSSES_ALERTES(y_true, y_pred),
-            "F2 détection":      F_F2_DETECTION(y_true, y_pred)}
+            "F1 macro":          f1_score(y_true, y_pred, average="macro", zero_division=0),
+            #"F2 détection":      F_F2_DETECTION(y_true, y_pred)
+            }
 ```
 
 ## FONCTIONS MODÈLES
@@ -284,8 +345,8 @@ def F_K_NN(graine=GRAINE):
 
 ```{python}
 MODELES = {"Random Forest":         F_RANDOM_FOREST,
-           "Régression logistique": F_LOGISTIC_REGRESSION,
            "SVM RBF":               F_SVM_NOYAU_RBF,
+           "Régression logistique": F_LOGISTIC_REGRESSION,
            "Gradient Boosting":     F_GRADIENT_BOOSTING,
            "k-NN":                  F_K_NN}
 ```
@@ -341,20 +402,25 @@ def F_EVALUER_MODELE(nom, F_MODELE, table, plis, groupes_internes,
         for k, p in enumerate(params, 1):
             print(f"  pli {k} : {p}")
         display(scores.agg(["mean", "std"]).round(3))
-        print(f"Exactitude par fichier (vote majoritaire) : {exactitude_fichiers:.3f} "
-              f"({(vote['reel'] == vote['pred']).sum()}/{len(vote)})")
+        #print(f"Exactitude par fichier (vote majoritaire) : {exactitude_fichiers:.3f} "
+        #      f"({(vote['reel'] == vote['pred']).sum()}/{len(vote)})")
         print(classification_report(y, y_pred_oof, zero_division=0))
         print("Défauts manqués par classe :")
         F_FNR(y, y_pred_oof)
-        ConfusionMatrixDisplay.from_predictions(y, y_pred_oof, normalize="true",
-                                                values_format=".3f", cmap="Blues")
+        #MATRICE DE CONFUSION
+        # ConfusionMatrixDisplay.from_predictions(y, y_pred_oof, normalize="true",
+        #                                        values_format=".3f", cmap="Blues")
+        ConfusionMatrixDisplay.from_predictions(y, y_pred_oof, 
+                                             cmap="Blues")                                        
         plt.title(f"{nom} — {titre}")
         plt.show()
 
     resume = {"Modèle": nom, "Protocole": titre}
     for col in scores:
-        resume[col] = f"{scores[col].mean():.3f} ± {scores[col].std():.3f}"
-    resume["Exactitude fichiers"] = round(exactitude_fichiers, 3)
+        resume[col] = f"{scores[col].mean():.3f}"
+        #avec ecart type _standard deviation 
+        # resume[col] = f"{scores[col].mean():.3f} ± {scores[col].std():.3f}"
+    #resume["Exactitude fichiers"] = round(exactitude_fichiers, 3)
     return resume, y_pred_oof, params
 ```
 
@@ -363,7 +429,7 @@ def F_EVALUER_MODELE(nom, F_MODELE, table, plis, groupes_internes,
 ```{python}
 ## FONCTION DÉMARCHE COMPLÈTE (UN CAPTEUR)
 
-def F_DEMARCHE_COMPLETE(chemin, modeles=MODELES, protocoles_detailles=("2. Groupé par fichier",),
+def F_DEMARCHE_COMPLETE(chemin, modeles=MODELES, protocoles_detailles=("3. Leave-one-load-out","2. Groupé par fichier"),
                         features=FEATURES, colonne_cible=CIBLE):
     """Charge la table, construit les 4 protocoles, évalue tous les modèles.
 
@@ -384,11 +450,127 @@ def F_DEMARCHE_COMPLETE(chemin, modeles=MODELES, protocoles_detailles=("2. Group
 
     resultats = pd.DataFrame(resultats)
     recap = resultats.pivot(index="Modèle", columns="Protocole", values="F1 macro")
-    print("\nF1 macro (moyenne ± écart-type sur les plis) :")
+    print("\nF1 macro (moyenne sur les plis) :")
     display(recap)
+
+    print("\nComparaison des modèles (P3 / P2 / P4) :")
+    display(F_TABLEAU_COMPARATIF(resultats))
     return resultats
 ```
 
+
+
+```{python}
+
+## FONCTION TABLEAU COMPARATIF DES MODÈLES PAR PROTOCOLE
+
+def F_TABLEAU_COMPARATIF(resultats,
+#                         protocoles=("3. Leave-one-load-out", "2. Groupé par fichier",
+#                                     "4. Leave-one-diameter-out"),
+                         protocoles=("3. Leave-one-load-out", "2. Groupé par fichier"),
+                         metriques=("Défauts manqués", "Fausses alertes", "F1 macro"),
+                         decimales=3):
+    """Une ligne par modèle ; pour chaque métrique, les valeurs des protocoles
+    sont regroupées dans une seule cellule (ex. « 0,958 / 0,918 / 0,465 »).
+
+    Tri des modèles dans l'ordre des priorités : défauts manqués (croissant),
+    puis fausses alertes (croissant), puis F1 macro (décroissant),
+    en lisant les protocoles dans l'ordre donné (P3, puis P2, puis P4).
+    """
+    def moyenne(v):                 # accepte 0.958 ou « 0.958 ± 0.087 »
+        return float(str(v).split("±")[0])
+
+    abrev = [p.split(".")[0] for p in protocoles]                  # ['3', '2', '4']
+    valeurs = (resultats[resultats["Protocole"].isin(protocoles)]
+               .set_index(["Modèle", "Protocole"])[list(metriques)]
+               .map(moyenne)
+               .unstack("Protocole"))                              # colonnes (métrique, protocole)
+
+    # Tri : chaque métrique puis chaque protocole ; le F1 est trié en décroissant
+    cles = [(m, p) for m in metriques for p in protocoles]
+    sens = [m != "F1 macro" for m in metriques for p in protocoles]
+    valeurs = valeurs.sort_values(cles, ascending=sens)
+
+    def cellule(ligne, m):
+        return " / ".join(f"{ligne[(m, p)]:.{decimales}f}".replace(".", ",") for p in protocoles)
+
+    tableau = pd.DataFrame({
+        f"{m} (" + " / ".join(f"P{a}" for a in abrev) + ")":
+            [cellule(ligne, m) for _, ligne in valeurs.iterrows()]
+        for m in metriques
+    }, index=valeurs.index)
+    return tableau
+```
+
+
+
+
+
+```{python}
+
+## FONCTION AFFICHAGE ET ENREGISTREMENT DU TABLEAU EN IMAGE
+from datetime import datetime
+from pathlib import Path
+
+def F_SAUVEGARDER_TABLEAU(tableau, nom="Tableau_DE",
+                          titre="Comparaison des modèles ML pour protocoles (P3 / P2 / P4) :",
+                          sous_titres=None,
+                          dossier=Path("..") / "images" / "machine_learning"):
+    """Affiche le tableau avec un titre au-dessus et des sous-titres en dessous,
+    puis l'enregistre en PNG : <dossier>/<nom>_AAAA-MM-JJ_HH_MM.png
+    """
+    if sous_titres is None:
+        sous_titres = [f"FEATURES : {', '.join(FEATURES)}",
+                       f"CIBLE : {CIBLE}"]
+
+    donnees = tableau.reset_index()                  # la colonne « Modèle » devient visible
+    n_lignes = len(donnees) + 1                      # + ligne d'en-tête
+
+    # Hauteurs en pouces : titre, tableau, sous-titres
+    h_titre, h_ligne, h_sous = 0.55, 0.36, 0.26
+    h_tableau = h_ligne * n_lignes
+    h_totale = h_titre + h_tableau + h_sous * len(sous_titres) + 0.15
+    fig = plt.figure(figsize=(13, h_totale))
+
+    # Axe du tableau, placé sous le titre (coordonnées de la figure entre 0 et 1)
+    bas_tableau = (h_sous * len(sous_titres) + 0.15) / h_totale
+    ax = fig.add_axes([0.01, bas_tableau, 0.98, h_tableau / h_totale])
+    ax.axis("off")
+
+    table = ax.table(cellText=donnees.values, colLabels=donnees.columns,
+                     cellLoc="center", colLoc="center", bbox=[0, 0, 1, 1])
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    for (ligne, col), cell in table.get_celld().items():
+        cell.set_edgecolor("#A6A6A6")
+        if ligne == 0:                                # en-tête
+            cell.set_facecolor("#1F4E79")
+            cell.set_text_props(color="white", fontweight="bold")
+        elif ligne % 2 == 0:                          # lignes alternées
+            cell.set_facecolor("#F2F6FA")
+        if col == 0 and ligne > 0:                    # colonne Modèle alignée à gauche
+            cell.set_text_props(ha="left")
+            cell.PAD = 0.03
+
+    # Titre au-dessus, sous-titres en dessous, alignés sur le bord gauche du tableau
+    fig.text(0.01, 1 - 0.12 / h_totale, titre, fontsize=13, fontweight="bold",
+             ha="left", va="top")
+    for k, texte in enumerate(sous_titres):
+        fig.text(0.01, bas_tableau - (0.08 + h_sous * (k + 1)) / h_totale, texte,
+                 fontsize=10, color="#404040", ha="left", va="bottom")
+
+    dossier = Path(dossier)
+    dossier.mkdir(parents=True, exist_ok=True)       # crée le dossier s'il n'existe pas
+    horodatage = datetime.now().strftime("%Y-%m-%d_%H_%M")
+    chemin = dossier / f"{nom}_{horodatage}.png"
+    fig.savefig(chemin, dpi=200, bbox_inches="tight")
+    plt.show()
+
+    print(f"Tableau enregistré : {chemin.resolve()}")
+    return chemin
+
+
+```
 
 
 
@@ -404,6 +586,26 @@ def F_DEMARCHE_COMPLETE(chemin, modeles=MODELES, protocoles_detailles=("2. Group
 resultats_DE = F_DEMARCHE_COMPLETE(r"..\data\features\table_DE.csv")
 resultats_DE
 ```
+
+## APPEL DES TABLEAU COMPARATIF : CAPTEUR DRIVE END (DE)
+```{python}
+
+tableau_DE = F_TABLEAU_COMPARATIF(resultats_DE)
+
+print("\nComparaison des modèles pour protocoles (P3 / P2 / P4) :")
+print("FEATURES : ", FEATURES)
+print("CIBLE : ", CIBLE)
+tableau_DE
+
+F_SAUVEGARDER_TABLEAU(tableau_DE, nom="Tableau_DE")
+
+
+
+```
+
+
+
+
 
 ## APPEL DES FONCTIONS : CAPTEUR FAN END (FE)
 
@@ -505,9 +707,12 @@ comparaison
 ## SÉLECTION DES MODÈLES À GARDER
 # (nom affiché, fonction du modèle, protocole utilisé pour régler les hyperparamètres)
 SELECTION = [
-    ("SVM RBF — réglé leave-one-load-out",       F_SVM_NOYAU_RBF, "3. Leave-one-load-out"),
+    ("Gradient Boosting — réglé leave-one-load-out", F_GRADIENT_BOOSTING, "3. Leave-one-load-out"),
     ("Random Forest — réglé leave-one-load-out", F_RANDOM_FOREST, "3. Leave-one-load-out"),
-    ("Random Forest — réglé groupé par fichier", F_RANDOM_FOREST, "2. Groupé par fichier"),
+    #("Random Forest — réglé groupé par fichier", F_RANDOM_FOREST, "2. Groupé par fichier"),
+    #("SVM RBF — réglé leave-one-load-out",       F_SVM_NOYAU_RBF, "3. Leave-one-load-out"),
+    #("SVM RBF — réglé groupé par fichier",       F_SVM_NOYAU_RBF, "2. Groupé par fichier"),
+    #("Régression logistique — réglé leave-one-load-out", F_LOGISTIC_REGRESSION, "3. Leave-one-load-out"),
 ]
 ```
 
@@ -559,8 +764,9 @@ def F_PREDIRE_TABLE(nom, modele, table, features=FEATURES, colonne_cible=CIBLE,
               f"({(vote['reel'] == vote['pred']).sum()}/{len(vote)})")
         print("Défauts manqués par classe :")
         F_FNR(y, y_pred)
-        ConfusionMatrixDisplay.from_predictions(y, y_pred, normalize="true",
-                                                values_format=".3f", cmap="Blues")
+        ConfusionMatrixDisplay.from_predictions(y, y_pred, cmap="Blues")
+        #ConfusionMatrixDisplay.from_predictions(y, y_pred, normalize="true",
+        #                                        values_format=".3f", cmap="Blues")
         plt.title(f"{nom}\n{titre}")
         plt.show()
 
@@ -624,12 +830,55 @@ for k, (nom, modele) in enumerate(modeles_DE.items(), 1):
 
 
 
+BOXPLOT KURTOSIS ET RMS POUR LES DE ET FE   
+
+```{python}
+
+## FONCTION BOXPLOTS DE / FE
+
+ORDRE_CLASSES = ["Sain", "IR007", "IR014", "IR021", "B007", "B014", "B021",
+                 "OR007", "OR014", "OR021"]
+
+def F_BOXPLOTS_DE_FE(chemin_DE, chemin_FE, variables=("RMS", "Kurtosis"),
+                     colonne_x="classe", ordre=ORDRE_CLASSES, meme_echelle=True,
+                     classe_reference="Sain"):                                   # NOUVEAU
+    """Une ligne de graphiques par variable, une colonne par capteur (DE à gauche, FE à droite).
+    Une ligne horizontale en pointillés indique la valeur maximale de la classe de référence (Sain).
+    """
+    tables = {"DE (Drive End)": pd.read_csv(chemin_DE),
+              "FE (Fan End)":   pd.read_csv(chemin_FE)}
+
+    fig, axes = plt.subplots(len(variables), 2, figsize=(15, 4.5 * len(variables)),
+                             sharey="row" if meme_echelle else False, squeeze=False)
+
+    for i, variable in enumerate(variables):
+        for j, (capteur, table) in enumerate(tables.items()):
+            ax = axes[i, j]
+            classes = [c for c in ordre if c in set(table[colonne_x])]
+            donnees = [table.loc[table[colonne_x] == c, variable] for c in classes]
+            ax.boxplot(donnees, tick_labels=classes, showfliers=False)
+
+            # NOUVEAU : valeur max de la classe Sain, calculée pour CE capteur
+            max_sain = table.loc[table[colonne_x] == classe_reference, variable].max()
+            ax.axhline(max_sain, color="green", ls="--", lw=1.2,
+                       label=f"max {classe_reference} = {max_sain:.3f}")
+            ax.legend(loc="upper left", fontsize=9)
+
+            ax.set_title(f"{variable} par {colonne_x} — {capteur}", loc="left")
+            ax.set_xlabel(colonne_x)
+            ax.set_ylabel(variable)
+            ax.tick_params(axis="x", rotation=45)
+            ax.grid(alpha=0.3)
+
+    plt.tight_layout()
+    plt.show()
+```
+
+```{python}
+F_BOXPLOTS_DE_FE(r"..\data\features\table_DE.csv", r"..\data\features\table_FE.csv")
 
 
-
-
-
-
+```
 
 
 
@@ -779,499 +1028,4 @@ Tableau comparatif des modèles par tâche et protocole de validation ; meilleur
 
 
 
-## FONCTION TRAIN TEST SPLIT POUR LA CLASSE DEFAUT   
-
-
-
-```{python}
-
-from sklearn.model_selection import StratifiedGroupKFold
-
-
-def F_TRAIN_TEST_SPLIT(table, colonne_cible="defaut", colonne_groupe="fichier", n_plis=4, graine=42):
-    """Sépare la table en train et test, en gardant chaque fichier d'un seul côté."""
-    fichiers_par_classe = table.groupby(colonne_cible)[colonne_groupe].nunique()
-    print("Fichiers par classe :")
-    print(fichiers_par_classe, "\n")
-
-    if fichiers_par_classe.min() < n_plis:
-        raise ValueError(
-            f"Il faut au moins {n_plis} fichiers par classe : réduis n_plis "
-            "ou regroupe les classes trop petites."
-        )
-
-    X = table.drop(columns=[colonne_cible, colonne_groupe])
-    y = table[colonne_cible]
-    groupes = table[colonne_groupe]
-
-    decoupage = StratifiedGroupKFold(n_splits=n_plis, shuffle=True, random_state=graine)
-    train, test = next(decoupage.split(X, y, groupes))
-
-    X_train, X_test = X.iloc[train], X.iloc[test]
-    y_train, y_test = y.iloc[train], y.iloc[test]
-    groupes_train, groupes_test = groupes.iloc[train], groupes.iloc[test]
-
-    print("Indicateurs utilisés :", list(X.columns))
-    print("Lignes train / test :", len(X_train), "/", len(X_test))
-    print("Fichiers train / test :", groupes_train.nunique(), "/", groupes_test.nunique())
-    print("Fichiers communs :", set(groupes_train) & set(groupes_test))
-    print("Classes dans le test :", y_test.value_counts().to_dict())
-
-    return X_train, X_test, y_train, y_test, groupes_train
-
-```
-
-## FONCTION FNR (False Negative Rate) POUR LA CLASSE DEFAUT
-
-```{python}
-import numpy as np
-import pandas as pd
-
-## FONCTION FNR (False Negative Rate) POUR LA CLASSE DEFAUT
-
-classe_saine = "Sain"  # à remplacer par le nom exact dans la colonne defaut
-
-def F_FNR(y_true, y_pred, classe_saine):
-    """Calcule le FNR : part des vrais défauts prédits comme sains."""
-    y_true = np.asarray(y_true)
-    y_pred = np.asarray(y_pred)
-
-    if len(y_true) != len(y_pred):
-        raise ValueError("y_true et y_pred n'ont pas le même nombre de lignes.")
-
-    if classe_saine not in y_true:
-        raise ValueError(
-            f"Classe saine {classe_saine!r} introuvable. Classes présentes : {list(np.unique(y_true))}"
-        )
-
-    defauts_reels = y_true != classe_saine
-    nb_defauts = defauts_reels.sum()
-
-    if nb_defauts == 0:
-        raise ValueError("y_true ne contient aucun défaut réel.")
-
-    nb_manques = (y_pred[defauts_reels] == classe_saine).sum()
-    fnr = nb_manques / nb_defauts
-
-    detail = pd.DataFrame({
-        "réels": pd.Series(y_true[defauts_reels]).value_counts(),
-        "prédits sain": pd.Series(y_true[defauts_reels & (y_pred == classe_saine)]).value_counts(),
-    }).fillna(0).astype(int)
-
-    print(detail)
-    print(f"\nFNR = {nb_manques} / {nb_defauts} = {fnr:.3f}")
-
-    return fnr
-
-```
-
-
-
-
-```{python}
-import numpy as np
-from sklearn.metrics import fbeta_score, make_scorer
-
-CLASSE_SAINE = "Sain"  # à remplacer par le nom exact dans la colonne defaut
-
-
-def F_TAUX_DEFAUTS_MANQUES(y_true, y_pred, classe_saine=CLASSE_SAINE):
-    """Part des vrais défauts prédits comme sains."""
-    y_true = np.asarray(y_true)
-    y_pred = np.asarray(y_pred)
-    defauts_reels = y_true != classe_saine
-    return (y_pred[defauts_reels] == classe_saine).mean()
-
-
-def F_TAUX_FAUSSES_ALERTES(y_true, y_pred, classe_saine=CLASSE_SAINE):
-    """Part des vrais éléments sains prédits comme défectueux."""
-    y_true = np.asarray(y_true)
-    y_pred = np.asarray(y_pred)
-    sains_reels = y_true == classe_saine
-    return (y_pred[sains_reels] != classe_saine).mean()
-
-
-def F_F2_DETECTION(y_true, y_pred, classe_saine=CLASSE_SAINE):
-    """Score F2 sur la détection : défectueux ou sain."""
-    return fbeta_score(
-        np.asarray(y_true) != classe_saine,
-        np.asarray(y_pred) != classe_saine,
-        beta=2,
-    )
-
-
-score_f2_detection = make_scorer(F_F2_DETECTION)
-
-```
-
-
-
-
-
-
-
-
-## FONCTION RANDOM FOREST 
-
-
-
-
-```{python}
-## FONCTION RANDOM FOREST 
-
-
-
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import ConfusionMatrixDisplay, classification_report, f1_score
-from sklearn.model_selection import GridSearchCV, StratifiedGroupKFold
-import matplotlib.pyplot as plt
-
-def F_RANDOM_FOREST(X_train, X_test, y_train, y_test, groupes_train, n_plis=3, graine=42):
-    """Optimise une Random Forest et l'évalue sur X_test, y_test."""
-    grille = {
-        "max_depth": [None, 5, 10],
-        "min_samples_leaf": [1, 5, 10],
-        "max_features": ["sqrt", 2, 3],
-        "n_estimators": [100, 300, 500],
-    }
-
-    recherche = GridSearchCV(
-        RandomForestClassifier(class_weight="balanced", random_state=graine),
-        param_grid=grille,
-        scoring="f1_macro",
-        cv=StratifiedGroupKFold(n_splits=n_plis, shuffle=True, random_state=graine),
-        n_jobs=-1,
-    )
-    recherche.fit(X_train, y_train, groups=groupes_train)
-
-    meilleur_modele = recherche.best_estimator_
-    y_pred = meilleur_modele.predict(X_test)
-    f1_test = f1_score(y_test, y_pred, average="macro")
-
-    print("Meilleurs paramètres :", recherche.best_params_)
-    print(f"F1 macro en validation : {recherche.best_score_:.3f}")
-    print(f"F1 macro sur le test : {f1_test:.3f}\n")
-    print(classification_report(y_test, y_pred, zero_division=0))
-    
-    
-    print("Taux de défauts manqués :", round(F_TAUX_DEFAUTS_MANQUES(y_test, y_pred), 3))
-    print("Taux de fausses alertes :", round(F_TAUX_FAUSSES_ALERTES(y_test, y_pred), 3))
-    print("F2 détection :", round(F_F2_DETECTION(y_test, y_pred), 3))
-    
-    print("FNR (False Negative Rate) :")
-    fnr_rf = F_FNR(y_test, y_pred, classe_saine="Sain")
-    
-    ConfusionMatrixDisplay.from_predictions(y_test, y_pred, xticks_rotation=45)
-    plt.title("Matrice de confusion : Random Forest")
-    plt.show()
-
-    return meilleur_modele, recherche.best_params_, f1_test
-
-
-
-
-
-
-
-```
-
-
-## FONCTION LOGISTIC REGRESSION
-
-
-```{python}
-
-## FONCTION LOGISTIC REGRESSION
-
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import ConfusionMatrixDisplay, classification_report, f1_score
-from sklearn.model_selection import GridSearchCV, StratifiedGroupKFold
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
-import matplotlib.pyplot as plt
-
-
-def F_LOGISTIC_REGRESSION(X_train, X_test, y_train, y_test, groupes_train, n_plis=3, graine=42):
-    """Optimise une régression logistique et l'évalue sur X_test, y_test."""
-    grille = {"logisticregression__C": [0.01, 0.1, 1, 10, 100]}
-
-    pipeline = make_pipeline(
-        StandardScaler(),
-        LogisticRegression(class_weight="balanced", max_iter=5000, random_state=graine),
-    )
-
-    recherche = GridSearchCV(
-        pipeline,
-        param_grid=grille,
-        scoring="f1_macro",
-        cv=StratifiedGroupKFold(n_splits=n_plis, shuffle=True, random_state=graine),
-        n_jobs=-1,
-    )
-    recherche.fit(X_train, y_train, groups=groupes_train)
-
-    meilleur_modele = recherche.best_estimator_
-    y_pred = meilleur_modele.predict(X_test)
-    f1_test = f1_score(y_test, y_pred, average="macro")
-
-    print("Meilleurs paramètres :", recherche.best_params_)
-    print(f"F1 macro en validation : {recherche.best_score_:.3f}")
-    print(f"F1 macro sur le test : {f1_test:.3f}\n")
-    print(classification_report(y_test, y_pred, zero_division=0))
-    print("Taux de défauts manqués :", round(F_TAUX_DEFAUTS_MANQUES(y_test, y_pred), 3))
-    print("Taux de fausses alertes :", round(F_TAUX_FAUSSES_ALERTES(y_test, y_pred), 3))
-    print("F2 détection :", round(F_F2_DETECTION(y_test, y_pred), 3))
-    
-    print("FNR (False Negative Rate) :")
-    fnr_rf = F_FNR(y_test, y_pred, classe_saine="Sain")
-
-    ConfusionMatrixDisplay.from_predictions(y_test, y_pred, xticks_rotation=45)
-    plt.title("Matrice de confusion : Logistic Regression")
-    plt.show()
-
-    return meilleur_modele, recherche.best_params_, f1_test
-
-```
-
-
-## FONCTION SVM Noyau RBF
-
-```{python}
-
-## FONCTION SVM Noyau RBF
-
-from sklearn.metrics import ConfusionMatrixDisplay, classification_report, f1_score
-from sklearn.model_selection import GridSearchCV, StratifiedGroupKFold
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn.svm import SVC
-import matplotlib.pyplot as plt
-
-def F_SVM_noyau_RBF(X_train, X_test, y_train, y_test, groupes_train, n_plis=3, graine=42):
-    """Optimise un SVM à noyau RBF et l'évalue sur X_test, y_test."""
-    grille = {
-        "svc__C": [0.1, 1, 10, 100],
-        "svc__gamma": ["scale", 0.01, 0.1, 1],
-    }
-
-    pipeline = make_pipeline(
-        StandardScaler(),
-        SVC(kernel="rbf", class_weight="balanced", random_state=graine),
-    )
-
-    recherche = GridSearchCV(
-        pipeline,
-        param_grid=grille,
-        scoring="f1_macro",
-        cv=StratifiedGroupKFold(n_splits=n_plis, shuffle=True, random_state=graine),
-        n_jobs=-1,
-    )
-    recherche.fit(X_train, y_train, groups=groupes_train)
-
-    meilleur_modele = recherche.best_estimator_
-    y_pred = meilleur_modele.predict(X_test)
-    f1_test = f1_score(y_test, y_pred, average="macro")
-
-    print("Meilleurs paramètres :", recherche.best_params_)
-    print(f"F1 macro en validation : {recherche.best_score_:.3f}")
-    print(f"F1 macro sur le test : {f1_test:.3f}\n")
-    print(classification_report(y_test, y_pred, zero_division=0))
-    print("Taux de défauts manqués :", round(F_TAUX_DEFAUTS_MANQUES(y_test, y_pred), 3))
-    print("Taux de fausses alertes :", round(F_TAUX_FAUSSES_ALERTES(y_test, y_pred), 3))
-    print("F2 détection :", round(F_F2_DETECTION(y_test, y_pred), 3))
-    print("FNR (False Negative Rate) :")
-    fnr_rf = F_FNR(y_test, y_pred, classe_saine="Sain")
-    ConfusionMatrixDisplay.from_predictions(y_test, y_pred, xticks_rotation=45)
-    plt.title("Matrice de confusion : SVM Noyau RBF")
-    plt.show()
-
-    return meilleur_modele, recherche.best_params_, f1_test
-
-
-
-```
-
-
-
-## FONCTION GRADIENT_BOOSTING _ istGradientBoostingClassifier
-
-```{python}
-
-## FONCTION GRADIENT_BOOSTING _HistGradientBoostingClassifier
-
-from sklearn.ensemble import HistGradientBoostingClassifier
-from sklearn.metrics import ConfusionMatrixDisplay, classification_report, f1_score
-from sklearn.model_selection import GridSearchCV, StratifiedGroupKFold
-import matplotlib.pyplot as plt
-
-
-def F_GRADIENT_BOOSTING(X_train, X_test, y_train, y_test, groupes_train, n_plis=3, graine=42):
-    """Optimise un gradient boosting et l'évalue sur X_test, y_test."""
-    grille = {
-        "learning_rate": [0.03, 0.1, 0.3],
-        "max_iter": [100, 300],
-        "max_leaf_nodes": [7, 15, 31],
-        "min_samples_leaf": [10, 20, 50],
-    }
-
-    recherche = GridSearchCV(
-        HistGradientBoostingClassifier(
-            class_weight="balanced", early_stopping=False, random_state=graine
-        ),
-        param_grid=grille,
-        scoring="f1_macro",
-        cv=StratifiedGroupKFold(n_splits=n_plis, shuffle=True, random_state=graine),
-        n_jobs=-1,
-    )
-    recherche.fit(X_train, y_train, groups=groupes_train)
-
-    meilleur_modele = recherche.best_estimator_
-    y_pred = meilleur_modele.predict(X_test)
-    f1_test = f1_score(y_test, y_pred, average="macro")
-
-    print("Meilleurs paramètres :", recherche.best_params_)
-    print(f"F1 macro en validation : {recherche.best_score_:.3f}")
-    print(f"F1 macro sur le test : {f1_test:.3f}\n")
-    print(classification_report(y_test, y_pred, zero_division=0))
-    print("Taux de défauts manqués :", round(F_TAUX_DEFAUTS_MANQUES(y_test, y_pred), 3))
-    print("Taux de fausses alertes :", round(F_TAUX_FAUSSES_ALERTES(y_test, y_pred), 3))
-    print("F2 détection :", round(F_F2_DETECTION(y_test, y_pred), 3))
-    
-    print("FNR (False Negative Rate) :")
-    fnr_rf = F_FNR(y_test, y_pred, classe_saine="Sain")
-    
-    ConfusionMatrixDisplay.from_predictions(y_test, y_pred, xticks_rotation=45)
-    plt.title("Matrice de confusion : Gradient Boosting")
-    plt.show()
-
-    return meilleur_modele, recherche.best_params_, f1_test
-
-
-
-```
-
-
-## FONCTION K-NN  (K-Nearest Neighbors )
-
-```{python}
-
-## FONCTION K-NN  (K-Nearest Neighbors )
-
-from sklearn.metrics import ConfusionMatrixDisplay, classification_report, f1_score
-from sklearn.model_selection import GridSearchCV, StratifiedGroupKFold
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
-import matplotlib.pyplot as plt
-
-
-def F_K_NN(X_train, X_test, y_train, y_test, groupes_train, n_plis=3, graine=42):
-    """Optimise un k-NN et l'évalue sur X_test, y_test."""
-    grille = {"kneighborsclassifier__n_neighbors": [3, 5, 11, 21]}
-
-    pipeline = make_pipeline(StandardScaler(), KNeighborsClassifier())
-
-    recherche = GridSearchCV(
-        pipeline,
-        param_grid=grille,
-        scoring="f1_macro",
-        cv=StratifiedGroupKFold(n_splits=n_plis, shuffle=True, random_state=graine),
-        n_jobs=-1,
-    )
-    recherche.fit(X_train, y_train, groups=groupes_train)
-
-    meilleur_modele = recherche.best_estimator_
-    y_pred = meilleur_modele.predict(X_test)
-    f1_test = f1_score(y_test, y_pred, average="macro")
-
-    print("Meilleurs paramètres :", recherche.best_params_)
-    print(f"F1 macro en validation : {recherche.best_score_:.3f}")
-    print(f"F1 macro sur le test : {f1_test:.3f}\n")
-    print(classification_report(y_test, y_pred, zero_division=0))
-    print("Taux de défauts manqués :", round(F_TAUX_DEFAUTS_MANQUES(y_test, y_pred), 3))
-    print("Taux de fausses alertes :", round(F_TAUX_FAUSSES_ALERTES(y_test, y_pred), 3))
-    print("F2 détection :", round(F_F2_DETECTION(y_test, y_pred), 3))
-    
-    print("FNR (False Negative Rate) :")
-    fnr_knn = F_FNR(y_test, y_pred, classe_saine="Sain")
-    
-    ConfusionMatrixDisplay.from_predictions(y_test, y_pred, xticks_rotation=45)
-    plt.title("Matrice de confusion : K-NN_Nearest Neighbors")
-    plt.show()
-
-    return meilleur_modele, recherche.best_params_, f1_test
-
-
-
-
-
-```
-
-
-
-APPEL DES FONCTIONS: 
-                     TRAIN TEST SPLIT 
-                     RANDOM FOREST POUR LA CLASSE DEFAUT
-
-
-
-```{python}
-#  appeler fonction TRAIN TEST SPLIT
-
-X_train, X_test, y_train, y_test, groupes_train = F_TRAIN_TEST_SPLIT(table_indicateurs_classe)
-
-X_train.head()
-
-```
-
-
-
-```{python}
-#  appeler fonction RANDOM FOREST
-
-modele_rf, params_rf, f1_rf = F_RANDOM_FOREST(
-    X_train, X_test, y_train, y_test, groupes_train
-)
-
-```
-
-
-```{python}
-#  appeler fonction LOGISTIC REGRESSION
-
-modele_lr, params_lr, f1_lr = F_LOGISTIC_REGRESSION(
-    X_train, X_test, y_train, y_test, groupes_train
-)
-
-```
-
-
-
-```{python}
-#  appeler fonction SVM Noyau RBF
-
-modele_svm, params_svm, f1_svm = F_SVM_noyau_RBF(
-    X_train, X_test, y_train, y_test, groupes_train
-)
-
-```
-
-
-
-```{python}
-#  appeler fonction GRADIENT_BOOSTING
-
-modele_gb, params_gb, f1_gb = F_GRADIENT_BOOSTING(
-    X_train, X_test, y_train, y_test, groupes_train
-)
-
-```
-
-```{python}
-#  appeler fonction K-NN ()
-
-modele_knn, params_knn, f1_knn = F_K_NN(
-    X_train, X_test, y_train, y_test, groupes_train
-)
-
-```
 
