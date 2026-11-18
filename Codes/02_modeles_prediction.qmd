@@ -700,19 +700,24 @@ On split par fichier (comme précédement), mais cette fois on ne garde que les 
 | conv1d_5 (sortie) | Conv1D, 1 filtre, noyau 7 | (None, 1200, 1) | 225 |
 | **Total** | | | **7 721** |
 
-Architecture de notre modèle Conv1D-AE (`1.AutoEncoder.ipynb`) : 7 721 paramètres au total. 
+Architecture de notre modèle Conv1D-AE (`1.AutoEncoder.ipynb`)
+
+:::
+
 Forme exigée par Conv1D : (batch, longueur, canaux)
 **Batch** = `None` : laissée libre, le modèle accepte n'importe quel nombre de fenêtres d'un coup. 
 **Longeur** = 1200 : définit selon la taille des fenêtres créées. Correspond au nombre de point de chaque fenêtre, ici 1200 car on fenêtre par échantillon de 0.1s (environ 3 tours d'arbre moteur)
 **canaux** = 1 : Nombre de canaux d'entrés, ici 1 puisque nous avons une dimension : l'amplitude.
 
-:::
 
 **Pourquoi cette architecture ?**
 
 - Le signal vibratoire est une **série 1D** : à chaque instant, une seule valeur (l'amplitude). Une convolution 1D fait glisser un petit filtre le long de cet unique axe (le temps) : c'est exactement la bonne opération, contrairement à une couche dense qui traiterait chaque échantillon indépendamment.
+
 - La signature d'un défaut n'est pas le niveau du signal, mais des **chocs qui se répètent** à chaque passage sur le défaut (rythme BPFI/BPFO/BSF). Ce sont des motifs *locaux* et *répétés* : un filtre de convolution les détecte naturellement, car **le même kernel est appliqué à toutes les positions** (weight sharing). Un choc est donc reconnu partout pareil, et cela ne coûte que quelques paramètres.
+
 - Les **noyaux impairs (7, 5, 3)** avec `padding="same"` ont un centre bien défini : l'alignement temporel entre l'entrée et la sortie est conservé avec cette configuration, ce qui ne serait pas le cas avec des noyaux pairs. C'est indispensable ici, car la MSE se calcule **point à point** entre signal d'entrée et reconstruction, ils doivent donc rester alignés pour être comparés.
+
 - **Le bottleneck** La fenêtre d'entrée fait 1200 points sur 1 canal. L'encodeur la réduit d'abord à 600×32 (pooling ÷2), puis à 300×16, et enfin à **300×8** : c'est le bottleneck, le point le plus étroit du réseau. Toute l'information de la fenêtre doit passer par ce résumé temporellement 4 fois plus grossier (300 positions au lieu de 1200).
 On garde l'idée générale (les régularités, la périodicité de l'arbre qui tourne), et on perd les détails rares. Or un choc de défaut est précisément un détail rare et bref : le modèle, entraîné **uniquement sur des signaux sains**, n'a jamais vu de choc, donc son décodeur ne sait pas en produire un. Résultat : sur une fenêtre saine, le bottleneck suffit à reconstruire le signal (erreur faible) ; sur une fenêtre défectueuse, les chocs passent à la trappe et la reconstruction est mauvaise (erreur forte). C'est cette erreur de reconstruction, par fenêtre, qui sert de score d'anomalie.
 
@@ -735,23 +740,28 @@ Aucun défaut n'est manqué (FNR=0%), par contre le taux de faux positif (FPR) o
 
 Courbe d'apprentissage : `loss` (train) et `val_loss` (validation) descendent ensemble, donc pas d'overfiting (ce serait `val_loss` qui remonterait) ; l'arrêt précoce intervient quand les progrès deviennent faibles :
 
-![Courbes loss (entraînement) et val_loss (validation) du Conv1D-AE.](../images/AE_nb1_FitCourbe.png){#fig-ae-loss width=80% fig-align="center"}
+![Courbes loss (entraînement) et val_loss (validation) du Conv1D-AE.](../images/AE_nb1_FitCourbe.png){#fig-ae-loss fig-pos="H" width=80% fig-align="center"}
 
-Entrée vs reconstruction : 
+Entrée vs reconstruction :
 - à gauche une fenêtre **saine** (reconstruction fidèle, erreur faible)
 - à droite une fenêtre **défaut** (les chocs ne sont pas reconstruits, erreur forte)
 
-![Entrée (bleu) et reconstruction (jaune) pour une fenêtre saine (gauche) et une fenêtre défaut (droite) ; erreur absolue en dessous.](../images/AE_nb1_Reconstruction.png){#fig-ae-reconstruction width=100% fig-align="center"}
+![Entrée (bleu) et reconstruction (jaune) pour une fenêtre saine (gauche) et une fenêtre défaut (droite) ; erreur absolue en dessous.](../images/AE_nb1_Reconstruction.png){#fig-ae-reconstruction fig-pos="H" width=100% fig-align="center"}
 
 Distribution du score d'anomalie (MSE par fenêtre) par classe sur le test : les défauts (IR, B, OR) ont des scores nettement plus hauts que le sain, et le seuil p99 (pointillé) les sépare :
 
-![Distribution du score d'anomalie par classe sur le test, avec le seuil p99 du train en pointillé.](../images/AE_nb1_DensiteMSE.png){#fig-ae-densite width=80% fig-align="center"}
+![Distribution du score d'anomalie par classe sur le test, avec le seuil p99 du train en pointillé.](../images/AE_nb1_DensiteMSE.png){#fig-ae-densite fig-pos="H" width=80% fig-align="center"}
 
 ### Test de robustesse à la chargee
 
-Protocole inter-conditions (notebook `2.AE_Tests_Robustesse.ipynb`) :
-- Entraînement sur les charges 0, 1, 2 HP et test sur la charge 3 HP **jamais vue** : cette configuration nous permet de tester l'incidence de la charge avec ce modèle, et de vérifier que la normalisation remplit bien le rôle attendu : gommer l'effet charge.
-- Toutes les sévérités de défaut (7/14/21/28 mils) : on prendra toutes les sévérités, pour tester la sensibilité de l'AE.
+
+Protocole inter-conditions (notebook `2.AE_Tests_Robustesse.ipynb`) :  
+
+- Entraînement sur les charges 0, 1, 2 HP et test sur la charge 3 HP **jamais vue** : cette configuration nous permet de tester l'incidence de la charge avec ce modèle, et de vérifier que la normalisation remplit bien le rôle attendu : gommer l'effet charge.  
+
+
+- Toutes les sévérités de défaut (7/14/21/28 mils) : on prendra toutes les sévérités, pour tester la sensibilité de l'AE.  
+
 
 | Signal | seuil (p99) | AUC | FPR | FNR |
 |---|---:|---:|---:|---:|
@@ -767,11 +777,11 @@ La marge 'Δ = min défauts − max sains' mesure la séparation (Δ > 0 = sépa
 
 Données **brutes** d'abord : les distributions sont proche, Δ est faible :
 
-![Scores par classe sur le test (charge 3 HP), données brutes, échelle log. Pointillés : max sains (vert) et min défauts (rouge).](../images/AE_nb2_Boxplot_Brute.png){#fig-ae-box-brut width=100% fig-align="center"}
+![Scores par classe sur le test (charge 3 HP), données brutes, échelle log. Pointillés : max sains (vert) et min défauts (rouge).](../images/AE_nb2_Boxplot_Brute.png){#fig-ae-box-brut fig-pos="H" width=100% fig-align="center"}
 
 Puis données **normalisées** : la marge Δ est nettement plus grande, le seuil sépare largement sains et défauts :
 
-![Scores par classe sur le test (charge 3 HP), données normalisées, échelle log. Pointillés : max sains (vert) et min défauts (rouge).](../images/AE_nb2_Boxplot_Norm.png){#fig-ae-box-norm width=100% fig-align="center"}
+![Scores par classe sur le test (charge 3 HP), données normalisées, échelle log. Pointillés : max sains (vert) et min défauts (rouge).](../images/AE_nb2_Boxplot_Norm.png){#fig-ae-box-norm fig-pos="H" width=100% fig-align="center"}
 
 
 ### **Conclusion :**
