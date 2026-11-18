@@ -681,6 +681,19 @@ Si la charge augmente, l'amplitude du signal augmente, et le modèle va détecte
 4. Split train-test
 On split par fichier (comme précédement), mais cette fois on ne garde que les signaux sains dans le train, c'est le principe de l'auto-encodeur.
 
+
+### Plan de test  
+
+Après le split par fichier, ce tableau récapitule le nombre de fenêtres par classe : côté train, seules les fenêtres **saines** (masque `sain`) ; côté test, sains et défauts :
+
+| defaut | train | test |
+|---|---:|---:|
+| B | 0 | 404 |
+| IR | 0 | 807 |
+| OR | 0 | 404 |
+| Sain | 1212 | 1613 |
+
+
 ### Le modèle Conv1D-AE
 
 ::: {#tbl-ae-architecture}
@@ -752,6 +765,17 @@ Distribution du score d'anomalie (MSE par fenêtre) par classe sur le test : les
 
 ![Distribution du score d'anomalie par classe sur le test, avec le seuil p99 du train en pointillé.](../images/AE_nb1_DensiteMSE.png){#fig-ae-densite fig-pos="H" width=80% fig-align="center"}
 
+
+- **Matrice de confusion**  
+
+Défaut **réel** (lignes) vs **alarme** déclenchée. 104 faux positifs (sains alarmés), 0 faux négatif.
+
+| | prédit sain | prédit défaut |
+|---|---:|---:|
+| réel sain | 1509 | 104 |
+| réel défaut | 0 | 1615 |
+
+
 ### Test de robustesse à la chargee
 
 
@@ -762,11 +786,34 @@ Protocole inter-conditions (notebook `2.AE_Tests_Robustesse.ipynb`) :
 
 - Toutes les sévérités de défaut (7/14/21/28 mils) : on prendra toutes les sévérités, pour tester la sensibilité de l'AE.  
 
+**Tableau de contrôle :**
+
+
+=== Nombre de fenêtres du plan de test ===
+
+| defaut_sain | train | test |
+|---|---:|---:|
+| Défaut | 0 | 3026 |
+| Sain | 2017 | 808 |
+
+
+=== Entrainement charge faible, test charge max ===
+
+| charge_hp | train | test |
+|---|---:|---:|
+| 0 | 405 | 0 |
+| 1 | 805 | 0 |
+| 2 | 807 | 0 |
+| 3 | 0 | 3834 |
+
+
+**Résultats**
 
 | Signal | seuil (p99) | AUC | FPR | FNR |
 |---|---:|---:|---:|---:|
 | Normalisé | 0.0297 | 1.0 | 1.49 % | 0.0 % |
 | Brut | 0.0011 | 1.0 | 97.90 % | 0.0 % |
+
 
 En brut, l'amplitude absolue (qui croît avec la charge) brouille la détection sur la charge 3 HP : le seuil n'est plus cohérent, et la FPR explose : **97,9%**. 
 En normalisé, l'amplitude est gommée : FPR = 1,5 %. **La normalisation est donc essentielle dès que la charge varie.**
@@ -798,6 +845,7 @@ En situation réelle, les conditions seront beaucoup plus difficiles, les résul
 
 ### **Suites possibles :**
 
+- Prendre en compte le ralentissement de la vitesse de rotation lors de l'augmentation de la charge
 - Tester sur des données issues du milieu industriel
 - Améliorer l'étape de traitement de signal dans le préprocessing pour filtrer les parasites et le bruit
 - Améliorer la définition des paramètres notamment :
