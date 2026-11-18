@@ -674,6 +674,8 @@ On veille à avoir des fenêtres assez longue pour ne pas perdre d'informations 
 2. Recouvrement
 Le recouvrement sert à mieux capter les chocs : sans recouvrement, un choc de défaut qui tomberait à cheval sur le partage de deux fenêtres serait vue "à moitié" dans chaque fenêtre, le modèle verrait donc moins bien l'événement du choc. Avec du recouvrement, chaque événement apparaît complet dans au moins une fenêtre, on ne perd pas d'information.
 
+![Recouvrement.](../images/Recouvrement.png){#fig-ae-recouvr fig-pos="H" width=80% fig-align="center"}
+
 3. Normalisation
 On normalise le signal brut car l'amplitude peut varier (notamment avec la charge) et on cherche à capter les variations des signaux (les chocs), pas les valeurs absolues du signal.
 Si la charge augmente, l'amplitude du signal augmente, et le modèle va détecter une variation et donc un défaut, hors l'augmentation de charge n'est pas un défaut !
@@ -692,6 +694,8 @@ Après le split par fichier, ce tableau récapitule le nombre de fenêtres par c
 | IR | 0 | 807 |
 | OR | 0 | 404 |
 | Sain | 1212 | 1613 |
+
+Le plan semble déséquilibré, mais l'équilibre est en réalité entre les sains (**1613** fenêtres) contre les défauts (404+807+404= **1615** fenêtres). L'AE Cherche à déterminer s'il y a un défaut ou non, pas à le caractériser.
 
 
 ### Le modèle Conv1D-AE
@@ -727,7 +731,7 @@ Forme exigée par Conv1D : (batch, longueur, canaux)
 
 - Le signal vibratoire est une **série 1D** : à chaque instant, une seule valeur (l'amplitude). Une convolution 1D fait glisser un petit filtre le long de cet unique axe (le temps) : c'est exactement la bonne opération, contrairement à une couche dense qui traiterait chaque échantillon indépendamment.
 
-- La signature d'un défaut n'est pas le niveau du signal, mais des **chocs qui se répètent** à chaque passage sur le défaut (rythme BPFI/BPFO/BSF). Ce sont des motifs *locaux* et *répétés* : un filtre de convolution les détecte naturellement, car **le même kernel est appliqué à toutes les positions** (weight sharing). Un choc est donc reconnu partout pareil, et cela ne coûte que quelques paramètres.
+- La signature d'un défaut n'est pas le niveau du signal, mais des **chocs qui se répètent** à chaque passage sur le défaut (rythme BPFI/BPFO/BSF). Ce sont des motifs *locaux* et *répétés* : un filtre de convolution les détecte naturellement, car **le même noyau est appliqué à toutes les positions** (weight sharing). Un choc est donc reconnu partout pareil, et cela ne coûte que quelques paramètres.
 
 - Les **noyaux impairs (7, 5, 3)** avec `padding="same"` ont un centre bien défini : l'alignement temporel entre l'entrée et la sortie est conservé avec cette configuration, ce qui ne serait pas le cas avec des noyaux pairs. C'est indispensable ici, car la MSE se calcule **point à point** entre signal d'entrée et reconstruction, ils doivent donc rester alignés pour être comparés.
 
