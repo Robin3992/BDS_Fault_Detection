@@ -695,7 +695,7 @@ Après le split par fichier, ce tableau récapitule le nombre de fenêtres par c
 | OR | 0 | 404 |
 | Sain | 1212 | 1613 |
 
-Le plan semble déséquilibré, mais l'équilibre est en réalité entre les sains (**1613** fenêtres) contre les défauts (404+807+404= **1615** fenêtres). L'AE Cherche à déterminer s'il y a un défaut ou non, pas à le caractériser.
+Le plan paraît déséquilibré, mais l'équilibre est en réalité entre les sains (**1613** fenêtres) contre les défauts (404+807+404= **1615** fenêtres). L'AE Cherche à déterminer s'il y a un défaut ou non, pas à le caractériser.
 
 
 ### Le modèle Conv1D-AE
@@ -746,7 +746,22 @@ Dans les tests réalisés, le modèle continu d'apprendre pendant des dixaines d
 
 ### Résultats
 
-La métrique retenue est l'**AUC** (aire sous la courbe ROC) : comme l'AE produit un score continu et non une classe, l'AUC mesure la probabilité qu'une fenêtre défectueuse ait un score supérieur à une fenêtre saine, indépendamment du seuil choisi (0,5 = hasard, 1,0 = séparation parfaite). Le seuil d'alarme est fixé ensuite, au percentile 99 des sains du train (p99), c'est à dire à la limite haute d'erreur, avec une marge de 1%. Les métriques opérationnelles (FPR, FNR) sont ensuite calculées à partir de ce seuil.
+#### Métriques 
+
+**Métrique du modèle :**
+
+L'AE ne fait pas une classification sain ou défaut, il donne un score continu : la MSE.
+On ne peut donc pas utiliser l'accuracy directement, il faudra d'abord choisir un seuil pour classer sain et défaut.
+
+La métrique ROC balaie tous les seuils possibles d'un coup, elle nous donne le score global du modèle.
+L'**AUC** est héritée de ROC, elle représente la probabilité que le score d'un défaut soit supérieur au score d'un sain : c'est exactement la question auquel on souhaite répondre : le modèle distingue-t-il bien sain et défaut ?.
+L'**AUC** sera donc notre métrique principale pour juger le modèle.
+
+**Métrique du seuil :**
+
+Ensuite seulement, on fixe le seuil opérationnel (p99 du train ici) et on calcule **FPR** et **FNR** à partir de ce seuil.
+C'est le couple AUC (qualité du score) + FPR/FNR (performance au seuil choisi) qui nous donnera une vision globale des performances.
+
 
 | AUC | FPR (fausses alarmes) | FNR (défauts manqués) |
 |----:|----------------------:|----------------------:|
@@ -843,6 +858,9 @@ Puis données **normalisées** : la marge Δ est nettement plus grande, le seuil
 
 
 ### **Limites :**
+
+- Les données saines pour l'apprentissage doivent être variées : l'idéal est d'avoir des signaux sains pour chaque état de fonctionnement du roulement, différentes charges et vitesse de rotation par exemple. Ainsi, le modèle aura appris ce qu'est un signal sain en toutes conditions, ce qui lui permettra de mieux différencier sain et défaut.
+- Mauvais apprentissage : veiller à entrainer le modèle uniquement sur des signaux sains. Si le modèle apprend à reconstruire des défauts, cela va générer de faux négatif, ce qu'il faut impérativement éviter.
 
 Les données testées sont dans des conditions optimales : pas de bruit, défaut clairement marqué (même à faible sévérité), etc...
 En situation réelle, les conditions seront beaucoup plus difficiles, les résultats seront probablement moins bon.
