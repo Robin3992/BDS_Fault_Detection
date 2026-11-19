@@ -610,7 +610,12 @@ F_SAUVEGARDER_TABLEAU(tableau_DE, nom="Tableau_DE")
 
 
 
+## APPEL DES FONCTIONS : CAPTEUR FAN END (FE)
 
+```{python}
+resultats_FE = F_DEMARCHE_COMPLETE(r"..\data\features\table_FE.csv")
+resultats_FE
+```
 
 ## APPEL DES FONCTIONS : CAPTEUR FAN END (FE)
 
@@ -829,8 +834,11 @@ for k, (nom, modele) in enumerate(modeles_DE.items(), 1):
 # Pour recharger plus tard : modele = joblib.load(DOSSIER / "modele_DE_1.joblib")
 ```
 
+```{python}
+F_BOXPLOTS_DE_FE(r"..\data\features\table_DE.csv", r"..\data\features\table_FE.csv")
 
 
+```
 
 
 
@@ -838,8 +846,21 @@ for k, (nom, modele) in enumerate(modeles_DE.items(), 1):
 BOXPLOT KURTOSIS ET RMS POUR LES DE ET FE   
 
 ```{python}
+NOUVELLE PARTIE POUR L'APPRENTISSAGE AUTOMATIQUE AVEC RANDOM FOREST, LOGISTIC REGRESSION, SVM, GRADIENT BOOSTING ET K-NN
+
 
 ## FONCTION BOXPLOTS DE / FE
+import pandas as pd
+import matplotlib.pyplot as plt
+
+PARTIE II — Plan de la suite du projet et du rapport
+7. Cadre commun à toutes les approches
+Les conclusions de l'exploration imposent un protocole identique pour toutes les familles de modèles, afin que les comparaisons soient honnêtes.
+7.1 Trois tâches de difficulté croissante
+Tâche	Cible	Intérêt
+T1	Détection : sain / défectueux (2 classes)	Cas d'usage industriel principal ; déjà presque résolu par le RMS → baseline
+T2	Localisation : Sain / IR / B / OR (4 classes)	Ce que l'analyse d'enveloppe permet d'expliquer physiquement
+T3	Localisation × diamètre (10 classes)	Benchmark de la littérature ; attention au biais « diamètre = essai »
 
 ORDRE_CLASSES = ["Sain", "IR007", "IR014", "IR021", "B007", "B014", "B021",
                  "OR007", "OR014", "OR021"]
@@ -850,6 +871,8 @@ def F_BOXPLOTS_DE_FE(chemin_DE, chemin_FE, variables=("RMS", "Kurtosis"),
     """Une ligne de graphiques par variable, une colonne par capteur (DE à gauche, FE à droite).
     Une ligne horizontale en pointillés indique la valeur maximale de la classe de référence (Sain).
     """
+    variables=("RMS",) #, "Kurtosis")
+
     tables = {"DE (Drive End)": pd.read_csv(chemin_DE),
               "FE (Fan End)":   pd.read_csv(chemin_FE)}
 
@@ -889,63 +912,6 @@ F_BOXPLOTS_DE_FE(r"..\data\features\table_DE.csv", r"..\data\features\table_FE.c
 
 
 
-NOUVELLE PARTIE POUR L'APPRENTISSAGE AUTOMATIQUE AVEC RANDOM FOREST, LOGISTIC REGRESSION, SVM, GRADIENT BOOSTING ET K-NN
-
-
-
-PARTIE II — Plan de la suite du projet et du rapport
-7. Cadre commun à toutes les approches
-Les conclusions de l'exploration imposent un protocole identique pour toutes les familles de modèles, afin que les comparaisons soient honnêtes.
-7.1 Trois tâches de difficulté croissante
-Tâche	Cible	Intérêt
-T1	Détection : sain / défectueux (2 classes)	Cas d'usage industriel principal ; déjà presque résolu par le RMS → baseline
-T2	Localisation : Sain / IR / B / OR (4 classes)	Ce que l'analyse d'enveloppe permet d'expliquer physiquement
-T3	Localisation × diamètre (10 classes)	Benchmark de la littérature ; attention au biais « diamètre = essai »
-
-7.2 Protocole de validation
-•	Validation croisée groupée par fichier (GroupKFold / StratifiedGroupKFold) : jamais de fenêtres d'un même fichier des deux côtés.
-•	Validation croisée par charge (leave-one-load-out) : apprentissage sur 3 charges, test sur la 4ᵉ — mesure la généralisation à des conditions de fonctionnement non vues.
-•	Comparaison obligatoire avec un split aléatoire par fenêtre, pour chiffrer l'optimisme qu'il introduit (illustration pédagogique de la fuite de données).
-•	Pipelines scikit-learn (scaler + modèle) ajustés uniquement sur les plis d'apprentissage.
-7.3 Métriques
-•	F1 macro et balanced accuracy (classes déséquilibrées : Sain ≈ 28 % des fenêtres).
-•	Matrice de confusion normalisée ; pour la détection, rappel des défauts (coût d'un défaut manqué) et taux de fausses alarmes.
-•	Agrégation possible au niveau fichier (vote majoritaire des fenêtres) en plus du niveau fenêtre.
-•	Temps d'entraînement et d'inférence, nombre de paramètres (critère de déploiement).
-
-
-
-
-```{python}
-
-```
-
-
-
-
-
-
-
-
-
-
-8. Machine Learning classique
-8.1 Objectif
-Établir des modèles de référence interprétables sur la table des features, et mesurer ce que le feature engineering « physique » apporte.
-8.2 Enrichissement des features
-•	Temporelles : skewness, facteurs de forme, d'impulsion et de jeu (clearance), écart-type, valeur crête à crête.
-•	Fréquentielles : énergie par bandes, centroïde et entropie spectrale, kurtosis spectral (kurtogramme pour choisir la bande de démodulation au lieu de 1–4 kHz fixe).
-•	Temps-fréquence : énergie des paquets d'ondelettes (WPD).
-•	Normalisation par la vitesse (analyse en ordres) pour rendre les raies indépendantes du régime.
-•	Étude de la durée de fenêtre (0,1 s / 0,2 s / 0,5 s / 1 s) : compromis résolution spectrale / nombre d'observations.
-8.3 Modèles
-Modèle	Rôle
-Régression logistique	Baseline linéaire (déjà amorcée), coefficients interprétables
-Arbre de décision	Règles lisibles, déjà amorcé (profondeur 4)
-k plus proches voisins	Référence non paramétrique, sensible au scaling
-SVM (noyau RBF)	Classique de la littérature roulements
-Random Forest	Robuste, importance des variables
-Gradient Boosting (XGBoost / LightGBM)	Généralement le plus performant sur données tabulaires
 
 8.4 Démarche
 1.	Baseline sur les 4 indicateurs temporels, puis 21 features, puis features enrichies.
