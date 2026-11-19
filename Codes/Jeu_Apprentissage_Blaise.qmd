@@ -11,12 +11,17 @@ Introduction Ce document présente:
 import pandas as pd
 import numpy as np
 
-
 table_DE_FE = pd.read_csv(r"..\data\features\table.csv")
+#table_DE_FE = pd.read_csv(r"..\data\features\table_indicateurs.csv")
 
-table_DE_FE.head(5)
-table_DE_FE.info()
+display(table_DE_FE.head(5))
+display(table_DE_FE.info())
 
+
+```
+
+
+```{python}
 table_DE = table_DE_FE[table_DE_FE["canal"] == "DE"]
 table_FE = table_DE_FE[table_DE_FE["canal"] == "FE"]
 
