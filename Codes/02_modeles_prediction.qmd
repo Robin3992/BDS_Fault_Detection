@@ -378,6 +378,35 @@ Les indicateurs spectraux (enveloppe aux fréquences caractéristiques), liés �
 
 # A supprimer
 
+
+
+
+Insert Blaise Début 
+
+
+
+
+bla bla 
+
+
+
+
+
+
+
+Insert Blaise Fin
+
+
+
+
+
+
+
+
+
+
+
+
 ## Objectif
 
 Ce rapport présente les modèles de classification construits à partir des
