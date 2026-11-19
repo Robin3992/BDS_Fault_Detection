@@ -1,10 +1,7 @@
-"""Modèles de classification et évaluation.
+###################################################################################################################################
+######################################################## ML Models ################################################################
+###################################################################################################################################
 
-Contient :
-  - evaluer_modele : métriques (accuracy, balanced accuracy, F1-macro),
-    rapport par classe et matrice de confusion
-  - entrainer_comparer : entraîne plusieurs modèles et renvoie un tableau comparatif
-"""
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -12,7 +9,7 @@ from sklearn.metrics import (accuracy_score, balanced_accuracy_score,
                              f1_score, classification_report, confusion_matrix)
 
 
-def evaluer_modele(y_test, y_pred, classes=None, titre=""):
+def evaluer_modele(y_test, y_pred, classes=None, titre="", report= True, dispMatrice=True):
     """Affiche accuracy, balanced accuracy, F1-macro, le rapport par classe
     et trace la matrice de confusion. Renvoie la matrice cm."""
     if classes is None:
@@ -21,30 +18,35 @@ def evaluer_modele(y_test, y_pred, classes=None, titre=""):
     print(f"Accuracy          : {accuracy_score(y_test, y_pred):.3f}")
     print(f"Balanced accuracy : {balanced_accuracy_score(y_test, y_pred):.3f}")
     print(f"F1-macro          : {f1_score(y_test, y_pred, average='macro'):.3f}")
-    print("\nRapport par classe :")
-    print(classification_report(y_test, y_pred, labels=classes, zero_division=0))
 
-    cm = confusion_matrix(y_test, y_pred, labels=classes)
-    fig, ax = plt.subplots(figsize=(8, 7))
-    im = ax.imshow(cm, cmap="Blues")
-    ax.set_xticks(range(len(classes)), classes, rotation=45, ha="right")
-    ax.set_yticks(range(len(classes)), classes)
-    ax.set_xlabel("Classe prédite")
-    ax.set_ylabel("Classe réelle")
-    ax.set_title(f"Matrice de confusion — {titre}", loc="left")
-    for i in range(len(classes)):
-        for j in range(len(classes)):
-            v = cm[i, j]
-            ax.text(j, i, str(v), ha="center", va="center", fontsize=7,
-                    color="white" if v > cm.max() / 2 else "black")
-    plt.colorbar(im, ax=ax, shrink=0.8)
-    plt.tight_layout()
-    plt.show()
+    if report:
+        print("\nRapport par classe :")
+        print(classification_report(y_test, y_pred, labels=classes, zero_division=0))
+        
+    cm = None
+    if dispMatrice:
+        cm = confusion_matrix(y_test, y_pred, labels=classes)
+        fig, ax = plt.subplots(figsize=(8, 7))
+        im = ax.imshow(cm, cmap="Blues")
+        ax.set_xticks(range(len(classes)), classes, rotation=45, ha="right")
+        ax.set_yticks(range(len(classes)), classes)
+        ax.set_xlabel("Classe prédite")
+        ax.set_ylabel("Classe réelle")
+        ax.set_title(f"Matrice de confusion — {titre}", loc="left")
+        for i in range(len(classes)):
+            for j in range(len(classes)):
+                v = cm[i, j]
+                ax.text(j, i, str(v), ha="center", va="center", fontsize=7,
+                        color="white" if v > cm.max() / 2 else "black")
+        plt.colorbar(im, ax=ax, shrink=0.8)
+        plt.tight_layout()
+        plt.show()
+
     return cm
 
 
 def entrainer_comparer(modeles, X_train, y_train, X_test, y_test,
-                       classes=None, tracer=True):
+                       classes=None, tracer=True, report=True, dispMatrice=True):
     """Entraîne chaque modèle de `modeles` (dict nom -> instance sklearn),
     évalue sur le test et renvoie un DataFrame comparatif des métriques.
 
@@ -70,8 +72,65 @@ def entrainer_comparer(modeles, X_train, y_train, X_test, y_test,
             "F1-macro": f1_score(y_test, y_pred, average="macro"),
         })
         if tracer:
-            evaluer_modele(y_test, y_pred, classes=classes, titre=nom)
+            evaluer_modele(y_test, y_pred, classes=classes, titre=nom, report=report, dispMatrice=dispMatrice)
     return pd.DataFrame(lignes).round(3)
+
+
+
+
+###################################################################################################################################
+######################################################## DL Models ################################################################
+###################################################################################################################################
+
+# Convolution 1 dimension : Auto-Encodeur
+import tensorflow as tf
+import keras
+from keras import layers
+
+def conv1d_ae(taille):
+    Input = keras.Input(shape=(taille, 1))
+    # Encodeur : 2 poolings
+    x = layers.Conv1D(32, 7, activation="relu", padding="same")(Input) 
+    x = layers.MaxPooling1D(2, padding="same")(x)                       
+    x = layers.Conv1D(16, 5, activation="relu", padding="same")(x)      
+    x = layers.MaxPooling1D(2, padding="same")(x)                       
+    latent = layers.Conv1D(8, 3, activation="relu", padding="same")(x)
+    # Decodeur : miroir exact
+    x = layers.Conv1D(16, 5, activation="relu", padding="same")(latent)  
+    x = layers.UpSampling1D(2)(x)                                         
+    x = layers.Conv1D(32, 7, activation="relu", padding="same")(x)        
+    x = layers.UpSampling1D(2)(x)                                       
+    sortie = layers.Conv1D(1, 7, padding="same")(x)           
+    modele = keras.Model(Input, sortie)
+    modele.compile(optimizer="adam", loss="mse")
+    return modele
+
+
+
+
+# Fonction de visu de la courbe d'entrainement
+def Courbe_Entraintement (historique):
+    plt.figure(figsize=(10, 5))
+    plt.plot(historique.history["loss"], label="Perte (entraînement)", linewidth=2)
+    plt.plot(historique.history["val_loss"], label="Perte (validation)", linewidth=2)
+    plt.xlabel("Époque")
+    plt.ylabel("MSE")
+    plt.title("Courbe d'entraînement", fontsize=14, fontweight="bold")
+    plt.legend(fontsize=12)
+    plt.grid(True, alpha=0.3)
+    return plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -456,7 +515,7 @@ def F_K_NN(X_train, X_test, y_train, y_test, groupes_train, n_plis=3, graine=42)
 
 #  appeler fonction LOGISTIC REGRESSION
 
-modele_lr, params_lr, f1_lr = F_LOGISTIC_REGRESSION(X_train, X_test, y_train, y_test, groupes_train)
+# modele_lr, params_lr, f1_lr = F_LOGISTIC_REGRESSION(X_train, X_test, y_train, y_test, groupes_train)
 
 
 

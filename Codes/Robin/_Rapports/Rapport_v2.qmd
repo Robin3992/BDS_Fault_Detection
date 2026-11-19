@@ -26,25 +26,36 @@ execute:
 
 # Présentation du projet
 
-## Le projet :
+## Contexte
 
-Sur les lignes de production, les machines tournantes (moteurs, pompes, ventilateurs, broyeurs) sont équipées d'accéléromètres qui enregistrent leurs vibrations. Un défaut de roulement (bague intérieure, bague extérieure, élément roulant) ou un déséquilibre mécanique laisse une signature caractéristique dans ce signal, souvent bien avant la panne.
+Dans le milieu industriel, sur les lignes de production, les machines tournantes (moteurs, pompes, ventilateurs, broyeurs) sont équipées d'accéléromètres qui enregistrent les vibrations. 
+Un défaut de roulement provoque des vibrations caractéristiques, porteuses d'informations essentielles sur l'état de santé de la machine.
 
-Le but du projet est de construire une chaîne complète d'analyse capable de détecter l'apparition d'un défaut.
+## Objectifs
 
-Selon les résultats obtenus, le modèle pourra éventuellement classer la sévérité du défaut et estimer la durée de vie résiduelle (RUL – Remaining Useful Life) des roulements.
+Le but du projet est d'exploiter ces signaux vibratoires pour les traduires en informations claires et exploitables dans un contexte d'entreprise.
 
-## Contexte et Enjeux :
+La chaîne d'analyse de signaux devra être capable :
+1. De détecter l'apparition d'un défaut
+2. De classer les défauts par type (bague intérieure, bague extérieure ou bille)
+3. D'estimer la sévérité du défaut 
+4. D'estimer la durée de vie résiduelle (RUL – Remaining Useful Life).
 
-En milieu industriel, la maintenance des équipements est un enjeu fort à cause des coûts d’intervention et  des temps d’indisponibilité des machines (pertes de CA).
+## Contexte et Enjeux
+
+La maintenance des équipements est un enjeu majeur car :
+- Les coûts d’intervention peuvent être très élevés (pièces de rechange, main d’œuvre, sous-traitance)
+- L’indisponibilité des machines pendant ces interventions fait baisser la production et donc le chiffre d’affaires.
+
+
 
 ### Aspect Financier
 
-La règle courante de dépenses en maintenance est de 2 à 4 % par an de la valeur de remplacement des équipements.
+La règle courante de dépense en maintenance est de 2 à 4 % par an de la valeur des équipements.
 
-Par exemple, pour un équipement de  1 000 000 € (valeur à neuf) : le budget annuel de maintenance est de 20 000 à 40 000 €.
+Par exemple, pour un équipement à 1 000 000 € : le budget annuel de maintenance est de 20 000 à 40 000 €.
 
-« Trop d’opérations de maintenance préventives » réduit le risque de casses imprévues mais maximise les coûts de maintenance »
+Trop d’opérations de maintenance préventives réduit le risque de casses imprévues mais augemente les coûts de maintenance
 
 « Pas assez de maintenance préventive augmente le risque de casses imprévues et génère des pertes de production, voir des urgences avec des pièces à livrer en express »
 
@@ -116,14 +127,6 @@ Données publiques issues de CWRU
 Les données proviennent des quatre pages de téléchargement du *Bearing Data Center* de la Case Western Reserve University : enregistrements de référence sur roulement sain, défauts sur le roulement côté entraînement échantillonnés à 12 kHz et à 48 kHz, et défauts sur le roulement côté ventilateur à 12 kHz. L'ensemble de ces fichiers a été rassemblé dans un catalogue unique, où chaque enregistrement reçoit un nom lisible résumant ses caractéristiques : source, localisation et diamètre du défaut, position éventuelle sur la bague extérieure et charge du moteur (par exemple `12kDE_IR007_L0` pour un défaut de bague intérieure de 0,007", enregistré à 12 kHz côté entraînement à 0 HP).
 
 Le catalogue compte 161 fichiers, répartis comme indiqué dans le @tbl-catalogue. Les défauts de bague extérieure sont plus nombreux, car ils ont été étudiés à trois positions par rapport à la zone de charge (3 h, 6 h et 12 h). Le plan n'est cependant pas complet : certaines combinaisons de diamètre, de position et de charge n'ont pas été enregistrées, en particulier pour le roulement côté ventilateur, et le diamètre de 0,028" n'existe qu'à 12 kHz côté entraînement, pour la bague intérieure et la bille.
-
-
-```{python}
-#  echo: false
-# Recharge automatiquement les modules modifiés (évite de redémarrer le kernel)
-%load_ext autoreload
-%autoreload 2
-```
 
 ```{python}
 #| tbl-cap: "Nombre de fichiers du catalogue CWRU par source et type de défaut."
@@ -1073,19 +1076,16 @@ Le défaut de bague intérieure se manifeste par des **chocs périodiques** à B
 
 # Préparation des données pour la modélisation
 
-La table des indicateurs (4 temporels + (4x4 + 1) 17 spectraux = 21 features) est prête pour l'apprentissage. Deux précautions, déjà identifiées dans l'analyse de variabilité :
+La table des indicateurs (4 temporels + 17 spectraux = 21 features) est prête pour l'apprentissage. Deux précautions, déjà identifiées dans l'analyse de variabilité (section η²) :
 
-- **Séparation par fichier, jamais par fenêtre** : la majorité de la variabilité est inter-fichiers, les fenêtres d'un même enregistrement sont des pseudo-réplicats, c'est à dire qu'ils portent sensiblement les mêmes informations. On répartit les *fichiers* entre train et test, puis on applique le split par fenêtre à l'intérieur de chaque fichier.
+- **Séparation par fichier, jamais par fenêtre** : plus de 90 % de la variabilité est inter-fichiers, les fenêtres d'un même enregistrement sont des pseudo-réplicats. `Sources.features.preparer_modeling` répartit les *fichiers* entre train et test (équivalent de `GroupShuffleSplit`) ;
 - **Standardisation sur le train uniquement** : moyenne et écart-type sont calculés sur l'apprentissage, puis appliqués au test (équivalent de `StandardScaler`, sans dépendance sklearn).
 
 ```{python}
 #| label: preparation-modeling
 #| code-summary: "Split par fichier + standardisation"
 #| tbl-cap: "Répartition des fichiers entre apprentissage et test."
-
-from Sources.features import preparer_modeling_strat
-
-X_train, X_test, y_train, y_test, g_train, g_test = preparer_modeling_strat(
+X_train, X_test, y_train, y_test, g_train, g_test = preparer_modeling(
     table, COLONNES_INDICATEURS)
 
 pd.DataFrame({
@@ -1121,7 +1121,9 @@ sauvegarder_table(table_modeling, "table_modeling.csv")
 ```{python}
 #| label: Visu des données pour la modélisation
 
-table_modeling.loc[table_modeling["split"] == "test", COLONNES_INDICATEURS]
+display(table_modeling.head(5))
+display(table_modeling[table_modeling["classe"] != "Sain"].head(5))
+table_modeling.info()
 ```
 
 
@@ -1136,33 +1138,17 @@ y_train = table_modeling.loc[table_modeling["split"] == "train", "classe"]
 y_test  = table_modeling.loc[table_modeling["split"] == "test", "classe"]
 
 logreg = linear_model.LogisticRegression(max_iter=500, random_state=24)
-logregb = linear_model.LogisticRegression(max_iter=500, random_state=24, class_weight="balanced") ##  >> Pour gérer le déséquilibre de classes
-
 logreg.fit(X_train, y_train)
-logregb.fit(X_train, y_train)
-
 y_pred = logreg.predict(X_test)
-y_predb = logregb.predict(X_test)
 cm = pd.crosstab(y_test, y_pred, rownames=['Classe réelle'], colnames=['Classe prédite'])
-cmb = pd.crosstab(y_test, y_predb, rownames=['Classe réelle'], colnames=['Classe prédite'])
 ```
 
 
 ```{python}
 #| label: regression logistique
 from sklearn.metrics import classification_report
-print("###### LogReg standard ######")
 display(cm)
 print(classification_report(y_test, y_pred))
-
-print("###### LogReg class_weight=balanced ######")
-display(cmb)
-print(classification_report(y_test, y_predb))
-
-```
-
-
-```{python}
 
 from sklearn.metrics import roc_curve, auc, roc_auc_score
 from sklearn.preprocessing import label_binarize
@@ -1215,35 +1201,134 @@ importances = importances.sort_values('Importance', ascending=False)
 display(importances[importances['Importance'] != 0])
 display(importances[importances['Importance'] == 0])
 
-print("Enseignements :")
-print("> Déséquilibre du dataset à gérer (beaucoup de défauts, peu de sain)")
-print("> Répartition entre le train et le test :")
-print(">>> chaque type de défaut doit être coté train et test pour que le modèle puisse apprendre et prédire correctement")
-print(">>> Un même fichier ne doit pas avoir de fenêtre coté train et test (pseudo réplicats : fuite de données)")
-print("> Les indicateurs (features) doivent être construits avec beaucoup de soin pour que le modèle puisse apprendre correctement")
-
-```
-
-
-```{python}
 from sklearn.tree import plot_tree
 plt.figure(figsize=(16, 12))
 plot_tree(Model_tree, feature_names=X_test.columns, class_names=Model_tree.classes_, filled=True, fontsize=8, proportion=True);
 ```
 
 
-```{python}
-#| label: arbre de décision : results
 
-catalogue
-"""
-tab = catalogue.groupby(["source", "defaut"]).size().unstack(fill_value=0)
-tab = tab[["Sain", "IR", "B", "OR"]].reindex(["Normal", "12kDE", "48kDE", "12kFE"])
-tab = tab.reset_index().rename(columns={"source": "Source", "IR": "Bague int. (IR)",
-                                        "B": "Bille (B)", "OR": "Bague ext. (OR)"})
-"""
-Markdown(tab.to_markdown(index=False))
-```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Auto-encodeur : détection d'anomalie
+### Principes
+
+Un auto-encodeur est un réseau de neurones composé de deux parties : un **encodeur**, qui compresse le signal d'entrée en un vecteur de petite taille (le *bottleneck*), et un **décodeur**, qui reconstruit le signal à partir de ce vecteur. Entraîné à minimiser l'erreur de reconstruction (MSE), il apprend à ne retenir que l'essentiel du signal.
+
+L'astuce pour la détection de défaut : on l'entraîne **uniquement sur des signaux sains**. Le modèle apprend donc à reconstruire « ce qu'est un roulement sain ». À l'inverse, un signal contenant un défaut (chocs impulsionnels jamais vus à l'entraînement) est mal reconstruit : **l'erreur de reconstruction (MSE) par fenêtre sert de score d'anomalie**. C'est une approche non supervisée : aucun défaut n'est nécessaire pour apprendre, ce qui correspond à la réalité industrielle (les pannes sont rares).
+
+### Préparation des données
+
+On travaille sur le jeu CWRU 12 kHz côté moteur (DE) : 40 fichiers (4 sains `Normal` + 36 défauts IR/B/OR, diamètres 7/14/21 mils, 4 charges).
+
+1. **Fenêtrage avec recouvrement** : le signal continu est découpé en fenêtres de `DUREE_FENETRE/2 = 0,1 s` (1200 échantillons à 12 kHz ≈ 3 tours d'arbre, assez pour contenir plusieurs chocs), avec un **recouvrement de 50 %**. Sans recouvrement, un choc tombant à cheval sur deux fenêtres serait vu « à moitié » dans chacune ; avec recouvrement, chaque événement apparaît complet dans au moins une fenêtre.
+2. **Normalisation par fenêtre** : chaque fenêtre est centrée-réduite (moyenne 0, écart-type 1). L'amplitude absolue du signal dépend de la charge (0–3 HP) ; sans normalisation, le modèle confondrait « changement de charge » et « défaut ». On veut apprendre la *forme* du signal (les chocs), pas son niveau.
+3. **Split par fichier (anti-fuite)** : 75 % train / 25 % test, en regroupant par fichier (`GroupShuffleSplit` sur `fichier`) : jamais de fenêtres d'un même enregistrement des deux côtés, sinon on aurait une fuite de donnée.
+4. **Train = sains uniquement** : seules les fenêtres des fichiers sain du train servent à l'entraînement.
+
+### Le modèle Conv1D-AE
+
+Le signal vibratoire est une série 1D où la signature du défaut est un **motif local** (chocs périodiques) : les convolutions 1D sont naturellement adaptées (poids partagés, invariantes à la position). L'architecture est une pyramide symétrique :
+
+- encodeur : `Conv1D(32, noyau 7) → MaxPool(2) → Conv1D(16, noyau 5) → MaxPool(2) → Conv1D(8, noyau 3)` = bottleneck (résolution temporelle ÷4) ;
+- décodeur : miroir exact (`UpSampling1D(2)` ×2) → `Conv1D(1, noyau 7)` en sortie (1 canal, même longueur).
+
+Choix justifiés : noyaux **impairs** + `padding="same"` → alignement temporel parfait entre entrée et sortie (critique, car la MSE se calcule point à point) ; noyau 7 ≈ 0,6 ms à 12 kHz → englobe un choc entier ; le bottleneck force le réseau à ne retenir que les structures régulières du signal sain, un choc isolé ne « passe » pas. Perte = **MSE** (pénalise fortement les gros écarts = les chocs), optimiseur Adam, `EarlyStopping` sur `val_loss` (patience 5), batch 64, 50 époques max.
+
+### Tests
+
+- **Seuil d'alarme** : percentile 99 des scores des fenêtres saines du train (~1 % de fausses alarmes théorique), appliqué tel quel au test.
+- **Métriques** : ROC-AUC (séparation sains/défauts indépendante du seuil), matrice de confusion 2×2 (sain/défaut), FPR (fausses alarmes) et FNR (défauts manqués), tableau croisé par classe (Sain/IR/B/OR).
+- **Figures** : courbe loss/val_loss, distribution du score par classe, score dans le temps (sain vs défaut), entrée vs reconstruction pour une fenêtre saine et une fenêtre défaut.
+
+### Résultats
+
+L'AE atteint une séparation sains/défauts quasi parfaite sur le test (ROC-AUC ≈ 1,000) : les défauts se reconstruisent nettement moins bien que les sains (MSE plus élevée), le seuil au percentile 99 sépare les deux distributions. Les fenêtres saines sont reconstruites fidèlement, les fenêtres défaut présentent de forts pics d'erreur aux chocs.
+
+**Limites à discuter** : CWRU est un benchmark « facile » (défauts artificiels marqués) ; les sains du test (charges 1 et 3 HP) n'ont pas été vus à l'entraînement, un FPR réel légèrement supérieur au 1 % théorique est donc attendu (changement de régime ≠ défaut) ; la détection selon la sévérité (7/14/21 mils) et la robustesse au bruit restent à évaluer.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
