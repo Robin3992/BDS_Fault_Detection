@@ -17,6 +17,7 @@ format:
     code-fold: true
     embed-resources: true
   pdf:
+    fig-pos: "H"
     toc: true
     number-sections: true
     echo: false
@@ -24,6 +25,8 @@ execute:
   warning: false
 ---
 
+
+{{< pagebreak >}}
 
 # Modèles Machine Learning classiques
 
@@ -37,12 +40,14 @@ execute:
 
 ## Objectif et données {#sec-ml-objectif}
 
-Cette partie présente les modèles de classification construits à partir des indicateurs vibratoires. Elle évalue leur capacité à reconnaître un défaut sur des roulements **déjà vus**, puis sur des roulements **nouveaux**. Les données (40 fichiers à 12 kHz côté entraînement, découpés en fenêtres de 0,2 s) et le calcul des indicateurs sont décrits dans le rapport d'analyse exploratoire.
+Cette partie présente les modèles de classification construits à partir des indicateurs vibratoires. Elle évalue leur capacité à reconnaître un défaut sur des roulements **déjà vus**, puis sur des roulements **nouveaux**. 
+
+Les données (40 fichiers à 12 kHz côté entraînement, découpés en fenêtres de 0,2 s) et le calcul des indicateurs sont décrits dans le rapport d'analyse exploratoire.
 
 | Jeu | Variables |
 |---|---|
-| Temporels (4) | RMS, Pic, Crete, Kurtosis |
-| Temporels + spectraux (9) | RMS, Pic, Crete, Kurtosis, RMS_bande, Env_BPFI, Env_BPFO, Env_BSF, Env_FTF |
+| Temporels  | RMS, Pic, Crete, Kurtosis |
+| Temporels + spectraux  | RMS, Pic, Crete, Kurtosis, RMS_bande, Env_BPFI, Env_BPFO, Env_BSF, Env_FTF |
 
 : Jeux de variables explicatives utilisés. {#tbl-ml-variables}
 
@@ -53,342 +58,15 @@ Cette partie présente les modèles de classification construits à partir des i
 
 : Rôle des deux tables de données. {#tbl-ml-tables}
 
-## Cadre commun à toutes les approches {#sec-ml-cadre}
 
-### Trois tâches de difficulté croissante
 
-| Tâche | Cible | Intérêt |
-|---|---|---|
-| T1 | Détection : sain / défectueux | Cas d'usage industriel principal (« pas de dégradation » / « dégradation »), suivi par les **défauts manqués** et les **fausses alertes** |
-| T2 | Localisation (`defaut`) : Sain / IR / B / OR — 4 classes | Caractériser la position du défaut, pour une interprétation plus fine par l'exploitant |
-| T3 | Localisation × diamètre (`classe`) — 10 classes | Approche de la sévérité (diamètres 0,007", 0,014", 0,021") |
 
-: Tâches de classification. {#tbl-ml-taches}
 
-::: {.callout-note title="Commentaire"}
-La tâche T1 n'a pas de modèle dédié : elle est mesurée à l'intérieur des tâches T2 et T3, en comptant les défauts prédits « Sain » et les sains prédits « défaut ».
+{{< pagebreak >}}
 
-La tâche T3 se heurte à une limite du plan d'expérience, détaillée en @sec-ml-dimension.
-:::
+## Introduction Machine Learning
 
-### Protocoles de validation {#sec-ml-protocoles}
 
-Chaque fichier est découpé en fenêtres très semblables entre elles : 98,9 % de la variabilité du RMS se situe **entre** fichiers. Ces fenêtres sont des pseudo-réplicats. Si des fenêtres d'un même fichier se trouvent à la fois en apprentissage et en test, le modèle reconnaît l'enregistrement au lieu du défaut : c'est la **fuite de données**. Les jeux d'apprentissage et de test ne doivent donc jamais partager un fichier.
-
-| Protocole | Découpage | Question posée | Plis |
-|---|---|---|---:|
-| P1 | Aléatoire par fenêtre | Aucune (illustration de la fuite) | 4 |
-| P2 | Groupé par fichier (`StratifiedGroupKFold`) | Le modèle reconnaît-il un enregistrement non vu ? | 4 |
-| P3 | Leave-one-load-out | … une charge de fonctionnement non vue ? | 4 |
-| P4 | Leave-one-diameter-out | … un roulement défectueux jamais vu ? | 3 |
-
-: Les quatre protocoles comparés. {#tbl-ml-protocoles}
-
-**Pourquoi 4 plis ?** Le plan compte 10 classes × 4 charges, soit un fichier par case. La classe la moins fournie, Sain, n'a que 4 fichiers : au-delà de 4 plis, un pli de test n'aurait aucun roulement sain.
-
-![Fuite de données : split aléatoire par fenêtre (gauche) et split groupé par fichier (droite).](../images/machine_learning/fuite_donnees_split.png){#fig-ml-fuite width=75% fig-align="center"}
-
-![Protocole P3 (leave-one-load-out) : chaque pli met une charge en test, soit 10 fichiers, un par classe.](../images/machine_learning/plan_40_fichiers_leave_one_load_out.png){#fig-ml-p3 width=75% fig-align="center"}
-
-![Validation croisée imbriquée : les plis internes choisissent les hyperparamètres, le pli externe mesure la performance.](../images/machine_learning/validation_croisee_imbriquee.png){#fig-ml-imbriquee width=70% fig-align="center"}
-
-![Protocole P4 (leave-one-diameter-out) : un diamètre entier en test ; les 4 sains sont répartis sur les 3 plis.](../images/machine_learning/plan_40_fichiers_leave_one_diameter_out.png){#fig-ml-p4 width=75% fig-align="center"}
-
-::: {.callout-note title="Commentaire"}
-**P4** répond à la question « le modèle reconnaît-il un défaut sur un roulement qu'il n'a jamais vu ? ». Le diamètre « 0 » des sains n'est qu'un code : les sains sont répartis entre les plis pour rester présents comme classe de référence, en apprentissage et en test.
-
-**P4 est écarté pour la cible `classe`** (10 classes) : chaque classe correspond à un seul roulement, qui serait absent de l'apprentissage.
-
-**P1** surestime les performances : 4 modèles atteignent un F1 macro de 0,973 à 0,978, contre 0,918 à 0,968 en P2 et P3. Ce protocole est écarté pour la suite.
-:::
-
-### Pipeline et mise à l'échelle
-
-- Les modèles sensibles à l'échelle (régression logistique, SVM, k-NN) sont placés dans un **pipeline** `StandardScaler` + modèle. Sans mise à l'échelle, le Kurtosis (jusqu'à 40) écraserait le RMS (0,06 à 0,7).
-- Le scaler est réajusté **sur le train de chaque pli** ; le test est transformé avec la moyenne et l'écart-type du train. Aucune information du test ne fuit vers l'apprentissage.
-- Les modèles à arbres (Random Forest, Gradient Boosting) n'ont pas besoin de mise à l'échelle : leurs seuils ne dépendent pas de l'unité.
-- Dans les grilles d'hyperparamètres, le préfixe désigne l'étape du pipeline : `svc__C`, `logisticregression__C`, `kneighborsclassifier__n_neighbors`.
-
-### Métriques et règle de sélection
-
-Les métriques sont classées par ordre d'importance industrielle :
-
-1. **Taux de défauts manqués** : part des fenêtres défectueuses prédites « Sain ». Un défaut manqué peut conduire à une casse.
-2. **Taux de fausses alertes** : part des fenêtres saines prédites « défaut ». Une fausse alerte entraîne un arrêt inutile.
-3. **F1 macro** : qualité de la localisation, chaque classe ayant le même poids malgré le déséquilibre (Sain ≈ 28 % des fenêtres).
-
-![Lecture des défauts manqués (colonne « Sain ») et des fausses alertes (ligne « Sain ») dans une matrice de confusion.](../images/machine_learning/schemas_defaut_manques.png){#fig-ml-lecture width=50% fig-align="center"}
-
-::: {.callout-tip title="À retenir"}
-**Sélection** : les modèles sont classés sur ces trois critères successifs, en lisant P3 puis P2 ; P4 sert de contrôle sur un roulement nouveau.
-
-**Entraînement final** : les 2 modèles retenus sont réentraînés sur toute la table DE ; leurs hyperparamètres sont choisis en validation P3, qui imite l'usage visé (conditions non vues).
-
-**Test** : une seule prédiction sur `table_FE`, qui n'a servi ni au choix ni au réglage.
-:::
-
-## Modèles testés et démarche de programmation {#sec-ml-modeles}
-
-| Modèle | Principe | Intérêt |
-|---|---|---|
-| Régression logistique | Frontières linéaires | Référence simple et interprétable |
-| k-NN | Vote des plus proches voisins | Intuitif, sans apprentissage de paramètres |
-| SVM (noyau RBF) | Frontières courbes, marge maximale | Classique de la littérature roulements |
-| Random Forest | Arbres en parallèle qui votent | Robuste, importance des variables |
-| Gradient Boosting (HistGradientBoosting) | Arbres en série corrigeant leurs erreurs | Souvent le plus performant sur données tabulaires |
-
-: Les cinq familles de modèles comparées. {#tbl-ml-familles}
-
-La démarche est entièrement écrite en fonctions, pour être rejouée à l'identique sur les deux tables et les deux jeux de variables :
-
-1. `F_CHARGER_TABLE` : lecture et sélection des variables ; les colonnes fichier, charge et diamètre ne servent qu'à construire les plis.
-2. `F_PROTOCOLES` et `F_TRAIN_TEST_SPLIT` : construction et contrôle des plis (aucun fichier commun, toutes les classes en test).
-3. `F_EVALUER_MODELE` : validation croisée imbriquée (`GridSearchCV` interne, plis externes) et calcul des métriques.
-4. `F_TABLEAU_COMPARATIF` : tableau de synthèse trié selon les trois critères.
-5. `F_TRANSFERT` : entraînement final sur DE et prédiction sur FE.
-
-![Arborescence des appels de fonctions.](../images/machine_learning/Demarche_Programme.png){#fig-ml-demarche width=65% fig-align="center"}
-
-## Localisation (« defaut ») — indicateurs temporels {#sec-ml-defaut-temp}
-
-**Cible** : `defaut` = [Sain, IR, B, OR]  ·  **Variables** : RMS, Pic, Crete, Kurtosis
-
-### Sélection des modèles
-
-![Comparaison des modèles (P3 / P2 / P4), indicateurs temporels, cible « defaut ».](../images/machine_learning/Tableau_DE_Defaut_Tempo.png){#fig-ml-tab-defaut-temp width=100%}
-
-**Random Forest** et **SVM RBF** sont retenus. Sur P3 et P2, les quatre premiers modèles sont presque à égalité en défauts manqués (0,001 ≈ 1 à 2 fenêtres). Le protocole P4 les départage : Random Forest 0,011, SVM 0,012, k-NN 0,017, Gradient Boosting 0,055. La Random Forest n'a aucune fausse alerte ; le SVM a le meilleur F1 macro.
-
-### Entraînement des deux modèles
-
-| Modèle (réglé en P3) | Hyperparamètres retenus | F1 validation |
-|---|---|---:|
-| SVM RBF | C = 10 ; gamma = 1 | 0,968 |
-| Random Forest | max_depth = 8 ; max_features = sqrt ; min_samples_leaf = 1 | 0,961 |
-
-: Hyperparamètres retenus, indicateurs temporels, cible « defaut ». {#tbl-ml-hp-defaut-temp}
-
-### Prédictions sur FE
-
-::: {#fig-ml-fe-defaut-temp layout-ncol=2}
-
-![SVM RBF](../images/machine_learning/Confusion_matrix_pred_FE_defaut_temp_SVM.png)
-
-![Random Forest](../images/machine_learning/Confusion_matrix_pred_FE_defaut_temp_RANDOM_FOREST.png)
-
-Matrices de confusion sur FE, indicateurs temporels, cible « defaut ».
-:::
-
-::: {.callout-note title="Commentaire"}
-**Détection intacte** : 1 seul défaut manqué sur 1 500 fenêtres défectueuses, pour les deux modèles.
-
-**Fausses alertes très élevées** : 153 fenêtres saines sur 706 (22 %) prédites OR pour le SVM ; 164 (23 %) pour la Random Forest, prédites OR (104) ou B (60).
-
-**Localisation dégradée** : plus de la moitié des défauts IR sont classés B (335 et 355 sur 600). L'exactitude globale tombe à 69 % (SVM) et 62 % (Random Forest).
-:::
-
-## Localisation (« defaut ») — indicateurs temporels et spectraux {#sec-ml-defaut-spect}
-
-**Cible** : `defaut`  ·  **Variables** : RMS, Pic, Crete, Kurtosis, RMS_bande, Env_BPFI, Env_BPFO, Env_BSF, Env_FTF
-
-### Sélection des modèles
-
-![Comparaison des modèles (P3 / P2 / P4), indicateurs temporels et spectraux, cible « defaut ».](../images/machine_learning/Tableau_DE_Defaut_Spectraux.png){#fig-ml-tab-defaut-spect width=100%}
-
-**Random Forest** (aucun défaut manqué ni fausse alerte en P3 et P2) et **Gradient Boosting** sont retenus. Le SVM est écarté : 17,5 % de fausses alertes en P3. Les indicateurs spectraux améliorent nettement P4 : F1 macro de 0,52 à 0,62, contre 0,41 à 0,50 avec les seuls indicateurs temporels.
-
-### Entraînement des deux modèles
-
-| Modèle (réglé en P3) | Hyperparamètres retenus | F1 validation |
-|---|---|---:|
-| Random Forest | max_depth = None ; max_features = sqrt ; min_samples_leaf = 1 | 0,989 |
-| Gradient Boosting | learning_rate = 0,05 ; max_iter = 300 ; max_leaf_nodes = 15 ; min_samples_leaf = 50 | 0,988 |
-
-: Hyperparamètres retenus, indicateurs temporels et spectraux, cible « defaut ». {#tbl-ml-hp-defaut-spect}
-
-### Prédictions sur FE
-
-::: {#fig-ml-fe-defaut-spect layout-ncol=2}
-
-![Gradient Boosting](../images/machine_learning/Confusion_matrix_pred_FE_defaut_spect_GRADIENT_BOOSTING.png)
-
-![Random Forest](../images/machine_learning/Confusion_matrix_pred_FE_defaut_spect_RANDOM_FOREST.png)
-
-Matrices de confusion sur FE, indicateurs temporels et spectraux, cible « defaut ».
-:::
-
-::: {.callout-note title="Commentaire"}
-**Aucun défaut manqué** pour le Gradient Boosting, 1 pour la Random Forest.
-
-**Fausses alertes divisées par deux** : 67 sur 706 (9,5 %) pour le Gradient Boosting, 77 (10,9 %) pour la Random Forest.
-
-La confusion **IR → B** persiste (389 et 308 fenêtres sur 600) : elle explique l'essentiel de l'exactitude de 69 à 72 %.
-:::
-
-## Localisation × diamètre (« classe ») — indicateurs temporels {#sec-ml-classe-temp}
-
-**Cible** : `classe` = [Sain, B007, B014, B021, IR007, IR014, IR021, OR007, OR014, OR021]  ·  **Variables** : RMS, Pic, Crete, Kurtosis
-
-### Sélection des modèles
-
-![Comparaison des modèles (P3 / P2), indicateurs temporels, cible « classe ».](../images/machine_learning/Tableau_DE_Classe_Tempo.png){#fig-ml-tab-classe-temp width=100%}
-
-Régression logistique, Random Forest et SVM n'ont aucun défaut manqué. Le SVM a le plus de fausses alertes : la **régression logistique** (la meilleure en P3) et la **Random Forest** (la meilleure en P2) sont retenues.
-
-### Entraînement des deux modèles
-
-| Modèle (réglé en P3) | Hyperparamètres retenus | F1 validation |
-|---|---|---:|
-| Random Forest | max_depth = 8 ; max_features = sqrt ; min_samples_leaf = 1 | 0,937 |
-| Régression logistique | C = 100 | 0,909 |
-
-: Hyperparamètres retenus, indicateurs temporels, cible « classe ». {#tbl-ml-hp-classe-temp}
-
-### Prédictions sur FE
-
-::: {#fig-ml-fe-classe-temp layout-ncol=2}
-
-![Régression logistique](../images/machine_learning/Confusion_matrix_pred_FE_classe_temp_LOGISTIC_REG.png)
-
-![Random Forest](../images/machine_learning/Confusion_matrix_pred_FE_classe_temp_RANDOM_FOREST.png)
-
-Matrices de confusion sur FE, indicateurs temporels, cible « classe ».
-:::
-
-::: {.callout-note title="Commentaire"}
-**Détection** : aucun défaut manqué pour la régression logistique, 1 pour la Random Forest.
-
-**Fausses alertes élevées** : 190 sur 706 (27 %) pour la régression logistique, presque toutes prédites OR014 ; 144 (20 %) pour la Random Forest.
-
-**Le diamètre n'est pas retrouvé** : IR014 est classé B014 ou B021, OR014 et OR021 sont classés OR007. Ce modèle n'apporte rien par rapport à la @sec-ml-defaut-temp.
-:::
-
-## Localisation × diamètre (« classe ») — indicateurs temporels et spectraux {#sec-ml-classe-spect}
-
-**Cible** : `classe`  ·  **Variables** : les 9 indicateurs temporels et spectraux
-
-### Sélection des modèles
-
-![Comparaison des modèles (P3 / P2), indicateurs temporels et spectraux, cible « classe ».](../images/machine_learning/Tableau_DE_Classe_Spectraux.png){#fig-ml-tab-classe-spect width=100%}
-
-La **Random Forest** est la seule sans défaut manqué ni fausse alerte. Le **Gradient Boosting** est retenu en second (0,001 de défauts manqués, contre 0,002 pour le SVM).
-
-### Entraînement des deux modèles
-
-| Modèle (réglé en P3) | Hyperparamètres retenus | F1 validation |
-|---|---|---:|
-| Random Forest | max_depth = None ; max_features = sqrt ; min_samples_leaf = 1 | 0,970 |
-| Gradient Boosting | learning_rate = 0,2 ; max_iter = 300 ; max_leaf_nodes = 15 ; min_samples_leaf = 20 | 0,969 |
-
-: Hyperparamètres retenus, indicateurs temporels et spectraux, cible « classe ». {#tbl-ml-hp-classe-spect}
-
-### Prédictions sur FE
-
-::: {#fig-ml-fe-classe-spect layout-ncol=2}
-
-![Random Forest](../images/machine_learning/Confusion_matrix_pred_FE_classe_spec_RANDOM_FOREST.png)
-
-![Gradient Boosting](../images/machine_learning/Confusion_matrix_pred_FE_classe_spect_GRADIENT_BOOSTING.png)
-
-Matrices de confusion sur FE, indicateurs temporels et spectraux, cible « classe ».
-:::
-
-::: {.callout-note title="Commentaire"}
-**Fausses alertes au plus bas** : 59 sur 706 (8,4 %) pour la Random Forest, 54 (7,6 %) pour le Gradient Boosting, contre 2 à 3 défauts manqués.
-
-**Le diamètre reste non reconnu** : IR014 est presque toujours classé B014, OR014 et OR021 sont classés OR007. Les indicateurs spectraux améliorent la détection, pas l'estimation de la taille.
-:::
-
-## La dimension du défaut est-elle prévisible ? {#sec-ml-dimension}
-
-Pour une localisation donnée, chaque diamètre correspond à **un seul roulement**. Trois validations de la prédiction du diamètre (0,007", 0,014", 0,021") ont été comparées, sur les seules fenêtres défectueuses et avec huit indicateurs :
-
-| Validation | Roulements testés | Exactitude (%) |
-|---|---|---|
-| Par charge | Déjà vus à d'autres charges | 96,2 à 98,5 |
-| Par localisation | Jamais vus (même banc) | 33 (B) · 59 (IR) · 50 (OR) |
-| Second roulement (côté ventilateur) | Jamais vus (autre roulement) | 66 (IR) · 38 (B) |
-
-: Prédiction du diamètre selon le type de validation. {#tbl-ml-dimension}
-
-::: {.callout-note title="Commentaire"}
-Sur des roulements nouveaux, l'exactitude moyenne tombe à **47,5 %**, pour un hasard à 33 %. Le diamètre de 0,007", reconnu dans 98,7 à 100 % des cas en validation par charge, n'est **plus jamais reconnu**. L'écart entre les deux validations mesure ce que le modèle avait appris par cœur : l'identité des roulements, et non la taille de leur défaut.
-
-Les quelques réussites s'expliquent par des niveaux d'énergie propres à ce banc (0,021" très énergétique, 0,014" faible), et non par une signature physique de la taille.
-
-Retirer les indicateurs dépendant de l'amplitude (indicateurs « sans unité ») ne corrige pas le problème : 44 % (IR) et 53 % (B) sur le second roulement.
-:::
-
-::: {.callout-tip title="À retenir"}
-Avec un seul roulement par combinaison localisation × diamètre, les données CWRU ne permettent pas d'estimer la dimension d'un défaut sur un roulement inconnu. C'est une limite du plan d'expérience, et non une impossibilité physique. Les modèles « classe » (@sec-ml-classe-temp et @sec-ml-classe-spect) le confirment sur FE.
-:::
-
-## Synthèse des prédictions sur FE {#sec-ml-synthese-fe}
-
-| Cible | Variables | Modèle | Défauts manqués | Fausses alertes | Exactitude |
-|---|---|---|---:|---:|---:|
-| defaut | Temporels | SVM RBF | 1 | 153 (22 %) | 69 % |
-| defaut | Temporels | Random Forest | 1 | 164 (23 %) | 62 % |
-| defaut | Temp. + spectraux | Gradient Boosting | **0** | 67 (9,5 %) | 69 % |
-| defaut | Temp. + spectraux | Random Forest | 1 | 77 (10,9 %) | **72 %** |
-| classe | Temporels | Régression logistique | 0 | 190 (27 %) | — |
-| classe | Temporels | Random Forest | 1 | 144 (20 %) | — |
-| classe | Temp. + spectraux | Random Forest | 2 | 59 (8,4 %) | — |
-| classe | Temp. + spectraux | Gradient Boosting | 3 | **54 (7,6 %)** | — |
-
-: Résultats des modèles entraînés sur DE et appliqués au roulement côté ventilateur (1 500 fenêtres défectueuses, 706 saines). {#tbl-ml-synthese-fe}
-
-![RMS par classe, DE (gauche) et FE (droite) ; pointillés : valeur maximale des fenêtres saines.](../images/machine_learning/Boxplot_RMS.png){#fig-ml-boxplot-rms width=100%}
-
-::: {.callout-note title="Commentaire"}
-**Pourquoi des fausses alertes sur FE ?** Le sain mesuré en FE est plus énergétique : max RMS 0,093 g contre 0,078 g en DE (@fig-ml-boxplot-rms). Une partie des fenêtres saines FE dépasse donc les seuils appris sur DE.
-
-**Pourquoi la localisation se dégrade ?** Une même étiquette n'a pas la même signature sur les deux roulements : OR014 est le défaut le **moins** énergétique en DE (RMS ≈ 0,10 g), et le **plus** énergétique en FE (≈ 0,95 g). Les seuils d'amplitude appris sur un roulement ne se transposent pas à un autre.
-
-Les indicateurs spectraux (enveloppe aux fréquences caractéristiques), liés à la physique du défaut plutôt qu'à son niveau, réduisent de moitié les fausses alertes.
-:::
-
-## Conclusion {#sec-ml-conclusion}
-
-1. **Détection** : quels que soient le modèle et le protocole, les défauts sont détectés (0 à 3 fenêtres manquées sur 1 500, y compris sur un second roulement). Ce résultat repose sur l'énergie des chocs et sur un seul roulement sain : le principe est établi, mais les seuils sont propres au banc.
-2. **Localisation** : excellente sur des roulements déjà vus (F1 macro de 0,96 à 0,99 en P3), elle chute sur un roulement nouveau (P4 : 0,41 à 0,62 ; FE : 62 à 72 %). Les indicateurs spectraux sont les plus utiles : meilleur P4, fausses alertes divisées par deux sur FE.
-3. **Dimension du défaut** : non estimable sur un roulement inconnu avec les données CWRU (@sec-ml-dimension).
-4. **Modèles recommandés** : Random Forest et Gradient Boosting sur les 9 indicateurs, cible `defaut`. Ils offrent le meilleur compromis : 0 à 1 défaut manqué et environ 10 % de fausses alertes sur FE.
-
-### Limites
-
-- Un seul roulement sain (4 enregistrements) : les fausses alertes ne sont mesurées que sur ce roulement.
-- Défauts artificiels (électro-érosion), sur un seul banc d'essai, sans bruit industriel.
-- Pour une cible à 10 classes, un seul roulement par classe : la généralisation ne peut pas être testée (P4 impossible).
-
-### Suites proposées
-
-- **Référence métier** : comparer les modèles à la règle simple « RMS > seuil → défaut ». Un modèle de ML doit faire mieux qu'elle pour justifier sa complexité.
-- **Surveillance par ligne de base** : suivre chaque roulement par rapport à son propre état initial, à la manière d'une carte de contrôle. Cette approche ne nécessite pas d'exemples de défauts ; elle est développée avec l'autoencodeur (partie Deep Learning).
-- **Sévérité et durée de vie** : utiliser des essais de dégradation progressive sur plusieurs roulements (IMS, FEMTO/PRONOSTIA) ou un jeu comportant plus de roulements par classe (Paderborn).
-
-<!-- ================= FIN PARTIE MACHINE LEARNING ================= -->
-
-
-
-
-
-
-
-
-# A supprimer
-
-## Objectif
-
-Ce rapport présente les modèles de classification construits à partir des
-indicateurs vibratoires, et évalue leur capacité à reconnaître un défaut sur
-des roulements déjà vus et sur des roulements nouveaux. Les données, la
-sélection des 40 fichiers et le calcul des indicateurs temporels et
-fréquentiels sont décrits dans le rapport d'analyse exploratoire
-(`01_analyse_exploratoire`) ; ils sont recalculés ici sans être réaffichés.
-
-## Préparation des données
-Les 40 fichiers sont téléchargés depuis le site CWRU, découpés en fenêtres de 0,2 s, et décrits par huit indicateurs temporels et fréquentiels.
 ```{python}
 #| include: false
 #Bloc 1 : remplace les deux anciens blocs de chargement
@@ -620,9 +298,9 @@ table = table.merge(spectre, on=["fichier", "fenetre"], how="left",
 table.to_csv("../data/features/table_indicateurs.csv", index=False)
 ```
 
-## Premier modèle de classification
+### Premier modèle de classification
 
-### Méthode
+#### Méthode
 
 On cherche à prédire la **localisation du défaut** (Sain, IR, B, OR) à partir
 des huit indicateurs temporels et fréquentiels. Le modèle est une forêt
@@ -690,9 +368,9 @@ observations précédentes : le fichier B021 présente une signature BPFO, et
 le défaut OR014, sans signature ni énergie marquée, ressemble aux défauts
 de bille.
 
-## Prédiction de la dimension du défaut
+### Prédiction de la dimension du défaut
 
-### Méthode
+#### Méthode
 
 On cherche à prédire le diamètre du défaut (0,007", 0,014" ou 0,021") à partir
 des huit indicateurs, sur les seules fenêtres défectueuses. Chaque diamètre
@@ -732,7 +410,7 @@ def evaluer_diametre(groupe_test, nom_groupe):
     return pd.DataFrame(scores), pd.concat(preds)
 ```
 
-### Résultats
+#### Résultats
 
 ```{python}
 #| label: tbl-diametre-charge
@@ -791,7 +469,7 @@ règles propres aux roulements de ce banc (forte énergie associée à 0,021",
 faible énergie ou défaut de bille associés à 0,014"), et non d'une relation
 physique entre le signal et la dimension du défaut.
 
-### Conclusion sur la dimension du défaut
+#### Conclusion sur la dimension du défaut
 
 La dimension du défaut est prédite avec 96 à 98,5 % d'exactitude lorsque le
 modèle est évalué sur des roulements déjà vus, mais avec 47,5 % seulement sur
@@ -803,15 +481,12 @@ Dans le jeu CWRU, chaque combinaison de localisation et de diamètre
 correspond à un seul roulement : l'effet de la taille est confondu avec
 celui du roulement et de son montage. Ces données ne permettent donc pas
 d'estimer la dimension d'un défaut sur un roulement inconnu. Les modèles
-développés dans la suite du projet se limiteront à la détection et à la
-localisation du défaut ; l'estimation de la sévérité nécessitera des
-données comportant plusieurs roulements par taille, ou des essais de
-dégradation progressive.
+développés dans la suite du projet se concentreront sur la détection et la localisation ; les modèles « classe » sont conservés pour confirmer cette limite sur le second roulement. L'estimation de la sévérité nécessiterait des données comportant plusieurs roulements par taille, ou des essais dedégradation progressive.
 
 
-## Prédiction du diamètre sur un second roulement
+### Prédiction du diamètre sur un second roulement
 
-### Principe
+#### Principe
 
 Les défauts ont aussi été créés sur le roulement côté ventilateur, un SKF 6203,
 avec les mêmes localisations et les mêmes diamètres. On dispose ainsi de deux
@@ -848,7 +523,7 @@ table_fe = construire_table(catalogue[base & (catalogue["source"] == "12kFE")], 
 ```
 
 
-### Résultats
+#### Résultats
 
 ```{python}
 #| label: tbl-diametre-fe
@@ -875,10 +550,9 @@ for nom_jeu, var in JEUX.items():
 Markdown(pd.DataFrame(lignes).to_markdown(index=False))
 ```
 
-### Conclusion générale
+#### Conclusion Introduction Machine Learning
 
-Sur les données CWRU, les indicateurs vibratoires distinguent sans erreur
-un roulement défectueux d'un roulement sain, grâce à l'énergie des chocs
+Sur les données CWRU, les indicateurs vibratoires distinguent sans erreur, sur le roulement côté entraînement, un roulement défectueux d'un roulement sain, grâce à l'énergie des chocs
 dans la bande de résonance de la structure. Ce résultat repose cependant
 sur un seul roulement sain : le principe de détection est établi, mais les
 seuils de décision sont propres à ce banc d'essai.
@@ -897,6 +571,339 @@ essais de dégradation progressive sur plusieurs roulements, dans des
 conditions variées, afin d'apprendre une loi de dégradation commune que
 l'on ajustera ensuite à chaque nouveau roulement.
 
+
+{{< pagebreak >}}
+
+
+## Choix et optimisation des modèles Machine Learning
+
+
+### Cadre commun à toutes les approches {#sec-ml-cadre}
+
+#### Trois tâches de difficulté croissante
+
+| Tâche | Cible | Intérêt |
+|---|---|---|
+| T1 | Détection : sain / défectueux | Cas d'usage industriel principal (« pas de dégradation » / « dégradation »), suivi par les **défauts manqués** et les **fausses alertes** |
+| T2 | Localisation (`defaut`) : Sain / IR / B / OR — 4 classes | Caractériser la position du défaut, pour une interprétation plus fine par l'exploitant |
+| T3 | Localisation × diamètre (`classe`) — 10 classes | Approche de la sévérité (diamètres 0,007", 0,014", 0,021") |
+
+: Tâches de classification. {#tbl-ml-taches}
+
+::: {.callout-note title="Commentaire"}
+La tâche T1 n'a pas de modèle dédié : elle est mesurée à l'intérieur des tâches T2 et T3, en comptant les défauts prédits « Sain » et les sains prédits « défaut ».
+
+La tâche T3 se heurte à une limite du plan d'expérience, détaillée en @sec-ml-dimension.
+:::
+
+#### Protocoles de validation {#sec-ml-protocoles}
+
+Chaque fichier est découpé en fenêtres très semblables entre elles : 98,9 % de la variabilité du RMS se situe **entre** fichiers. Ces fenêtres sont des pseudo-réplicats. Si des fenêtres d'un même fichier se trouvent à la fois en apprentissage et en test, le modèle reconnaît l'enregistrement au lieu du défaut : c'est la **fuite de données**. Les jeux d'apprentissage et de test ne doivent donc jamais partager un fichier.
+
+| Protocole | Découpage | Question posée | Plis |
+|---|---|---|---:|
+| P1 | Aléatoire par fenêtre | Aucune (illustration de la fuite) | 4 |
+| P2 | Groupé par fichier (`StratifiedGroupKFold`) | Le modèle reconnaît-il un enregistrement non vu ? | 4 |
+| P3 | Leave-one-load-out | … une charge de fonctionnement non vue ? | 4 |
+| P4 | Leave-one-diameter-out | … un roulement défectueux jamais vu ? | 3 |
+
+: Les quatre protocoles comparés. {#tbl-ml-protocoles}
+
+**Pourquoi 4 plis ?** Le plan compte 10 classes × 4 charges, soit un fichier par case. La classe la moins fournie, Sain, n'a que 4 fichiers : au-delà de 4 plis, un pli de test n'aurait aucun roulement sain.
+
+![Fuite de données : split aléatoire par fenêtre (gauche) et split groupé par fichier (droite).](../images/machine_learning/fuite_donnees_split.png){#fig-ml-fuite width=75% fig-align="center"}
+
+![Protocole P3 (leave-one-load-out) : chaque pli met une charge en test, soit 10 fichiers, un par classe.](../images/machine_learning/plan_40_fichiers_leave_one_load_out.png){#fig-ml-p3 width=75% fig-align="center"}
+
+![Validation croisée imbriquée : les plis internes choisissent les hyperparamètres, le pli externe mesure la performance.](../images/machine_learning/validation_croisee_imbriquee.png){#fig-ml-imbriquee width=70% fig-align="center"}
+
+![Protocole P4 (leave-one-diameter-out) : un diamètre entier en test ; les 4 sains sont répartis sur les 3 plis.](../images/machine_learning/plan_40_fichiers_leave_one_diameter_out.png){#fig-ml-p4 width=75% fig-align="center"}
+
+::: {.callout-note title="Commentaire"}
+**P4** répond à la question « le modèle reconnaît-il un défaut sur un roulement qu'il n'a jamais vu ? ». Le diamètre « 0 » des sains n'est qu'un code : les sains sont répartis entre les plis pour rester présents comme classe de référence, en apprentissage et en test.
+
+**P4 est écarté pour la cible `classe`** (10 classes) : chaque classe correspond à un seul roulement, qui serait absent de l'apprentissage.
+
+**P1** surestime les performances : 4 modèles atteignent un F1 macro de 0,973 à 0,978, contre 0,918 à 0,968 en P2 et P3. Ce protocole est écarté pour la suite.
+:::
+
+#### Pipeline et mise à l'échelle
+
+- Les modèles sensibles à l'échelle (régression logistique, SVM, k-NN) sont placés dans un **pipeline** `StandardScaler` + modèle. Sans mise à l'échelle, le Kurtosis (jusqu'à 40) écraserait le RMS (0,06 à 0,7).
+- Le scaler est réajusté **sur le train de chaque pli** ; le test est transformé avec la moyenne et l'écart-type du train. Aucune information du test ne fuit vers l'apprentissage.
+- Les modèles à arbres (Random Forest, Gradient Boosting) n'ont pas besoin de mise à l'échelle : leurs seuils ne dépendent pas de l'unité.
+- Dans les grilles d'hyperparamètres, le préfixe désigne l'étape du pipeline : `svc__C`, `logisticregression__C`, `kneighborsclassifier__n_neighbors`.
+
+
+
+#### Métriques et règle de sélection
+
+Les métriques sont classées par ordre d'importance industrielle :
+
+1. **Taux de défauts manqués** : part des fenêtres défectueuses prédites « Sain ». Un défaut manqué peut conduire à une casse.
+2. **Taux de fausses alertes** : part des fenêtres saines prédites « défaut ». Une fausse alerte entraîne un arrêt inutile.
+3. **F1 macro** : qualité de la localisation, chaque classe ayant le même poids malgré le déséquilibre (Sain : env. 28 % des fenêtres).
+
+![Lecture des défauts manqués (colonne « Sain ») et des fausses alertes (ligne « Sain ») dans une matrice de confusion.](../images/machine_learning/schemas_defaut_manques.png){#fig-ml-lecture width=50% fig-align="center"}
+
+::: {.callout-tip title="À retenir"}
+**Sélection** : les modèles sont classés sur ces trois critères successifs, en lisant P3 puis P2 ; P4 sert de contrôle sur un roulement nouveau.
+
+**Entraînement final** : les 2 modèles retenus sont réentraînés sur toute la table DE ; leurs hyperparamètres sont choisis en validation P3, qui imite l'usage visé (conditions non vues).
+
+**Test** : une seule prédiction sur `table_FE`, qui n'a servi ni au choix ni au réglage.
+:::
+
+### Modèles testés et démarche de programmation {#sec-ml-modeles}
+
+| Modèle | Principe | Intérêt |
+|---|---|---|
+| Régression logistique | Frontières linéaires | Référence simple et interprétable |
+| k-NN | Vote des plus proches voisins | Intuitif, sans apprentissage de paramètres |
+| SVM (noyau RBF) | Frontières courbes, marge maximale | Classique de la littérature roulements |
+| Random Forest | Arbres en parallèle qui votent | Robuste, importance des variables |
+| Gradient Boosting (HistGradientBoosting) | Arbres en série corrigeant leurs erreurs | Souvent le plus performant sur données tabulaires |
+
+: Les cinq familles de modèles comparées. {#tbl-ml-familles}
+
+La démarche est entièrement écrite en fonctions, pour être rejouée à l'identique sur les deux tables et les deux jeux de variables :
+
+1. `F_CHARGER_TABLE` : lecture et sélection des variables ; les colonnes fichier, charge et diamètre ne servent qu'à construire les plis.
+2. `F_PROTOCOLES` et `F_TRAIN_TEST_SPLIT` : construction et contrôle des plis (aucun fichier commun, toutes les classes en test).
+3. `F_EVALUER_MODELE` : validation croisée imbriquée (`GridSearchCV` interne, plis externes) et calcul des métriques.
+4. `F_TABLEAU_COMPARATIF` : tableau de synthèse trié selon les trois critères.
+5. `F_TRANSFERT` : entraînement final sur DE et prédiction sur FE.
+
+![Arborescence des appels de fonctions.](../images/machine_learning/Demarche_Programme.png){#fig-ml-demarche width=65% fig-align="center"}
+
+### Localisation (« defaut ») — indicateurs temporels {#sec-ml-defaut-temp}
+
+**Cible** : `defaut` = [Sain, IR, B, OR]  ·  **Variables** : RMS, Pic, Crete, Kurtosis
+
+#### Sélection des modèles
+
+![Comparaison des modèles (P3 / P2 / P4), indicateurs temporels, cible « defaut ».](../images/machine_learning/Tableau_DE_Defaut_Tempo.png){#fig-ml-tab-defaut-temp width=100%}
+
+**Random Forest** et **SVM RBF** sont retenus. Sur P3 et P2, les quatre premiers modèles sont presque à égalité en défauts manqués (0,001 env. 1 à 2 fenêtres). Le protocole P4 les départage : Random Forest 0,011, SVM 0,012, k-NN 0,017, Gradient Boosting 0,055. La Random Forest n'a aucune fausse alerte ; le SVM a le meilleur F1 macro.
+
+#### Entraînement des deux modèles
+
+| Modèle (réglé en P3) | Hyperparamètres retenus | F1 validation |
+|---|---|---:|
+| SVM RBF | C = 10 ; gamma = 1 | 0,968 |
+| Random Forest | max_depth = 8 ; max_features = sqrt ; min_samples_leaf = 1 | 0,961 |
+
+: Hyperparamètres retenus, indicateurs temporels, cible « defaut ». {#tbl-ml-hp-defaut-temp}
+
+#### Prédictions sur FE
+
+::: {#fig-ml-fe-defaut-temp layout-ncol=2}
+
+![SVM RBF](../images/machine_learning/Confusion_matrix_pred_FE_defaut_temp_SVM.png)
+
+![Random Forest](../images/machine_learning/Confusion_matrix_pred_FE_defaut_temp_RANDOM_FOREST.png)
+
+Matrices de confusion sur FE, indicateurs temporels, cible « defaut ».
+:::
+
+::: {.callout-note title="Commentaire"}
+**Détection intacte** : 1 seul défaut manqué sur 1 500 fenêtres défectueuses, pour les deux modèles.
+
+**Fausses alertes très élevées** : 153 fenêtres saines sur 706 (22 %) prédites OR pour le SVM ; 164 (23 %) pour la Random Forest, prédites OR (104) ou B (60).
+
+**Localisation dégradée** : plus de la moitié des défauts IR sont classés B (335 et 355 sur 600). L'exactitude globale tombe à 69 % (SVM) et 62 % (Random Forest).
+:::
+
+### Localisation (« defaut ») — indicateurs temporels et spectraux {#sec-ml-defaut-spect}
+
+**Cible** : `defaut`  ·  **Variables** : RMS, Pic, Crete, Kurtosis, RMS_bande, Env_BPFI, Env_BPFO, Env_BSF, Env_FTF
+
+#### Sélection des modèles
+
+![Comparaison des modèles (P3 / P2 / P4), indicateurs temporels et spectraux, cible « defaut ».](../images/machine_learning/Tableau_DE_Defaut_Spectraux.png){#fig-ml-tab-defaut-spect width=100%}
+
+**Random Forest** (aucun défaut manqué ni fausse alerte en P3 et P2) et **Gradient Boosting** sont retenus. Le SVM est écarté : 17,5 % de fausses alertes en P3. Les indicateurs spectraux améliorent nettement P4 : F1 macro de 0,52 à 0,62, contre 0,41 à 0,50 avec les seuls indicateurs temporels.
+
+#### Entraînement des deux modèles
+
+| Modèle (réglé en P3) | Hyperparamètres retenus | F1 validation |
+|---|---|---:|
+| Random Forest | max_depth = None ; max_features = sqrt ; min_samples_leaf = 1 | 0,989 |
+| Gradient Boosting | learning_rate = 0,05 ; max_iter = 300 ; max_leaf_nodes = 15 ; min_samples_leaf = 50 | 0,988 |
+
+: Hyperparamètres retenus, indicateurs temporels et spectraux, cible « defaut ». {#tbl-ml-hp-defaut-spect}
+
+#### Prédictions sur FE
+
+::: {#fig-ml-fe-defaut-spect layout-ncol=2}
+
+![Gradient Boosting](../images/machine_learning/Confusion_matrix_pred_FE_defaut_spect_GRADIENT_BOOSTING.png)
+
+![Random Forest](../images/machine_learning/Confusion_matrix_pred_FE_defaut_spect_RANDOM_FOREST.png)
+
+Matrices de confusion sur FE, indicateurs temporels et spectraux, cible « defaut ».
+:::
+
+::: {.callout-note title="Commentaire"}
+**Aucun défaut manqué** pour le Gradient Boosting, 1 pour la Random Forest.
+
+**Fausses alertes divisées par deux** : 67 sur 706 (9,5 %) pour le Gradient Boosting, 77 (10,9 %) pour la Random Forest.
+
+La confusion **IR → B** persiste (389 et 308 fenêtres sur 600) : elle explique l'essentiel de l'exactitude de 69 à 72 %.
+:::
+
+### Localisation × diamètre (« classe ») — indicateurs temporels {#sec-ml-classe-temp}
+
+**Cible** : `classe` = [Sain, B007, B014, B021, IR007, IR014, IR021, OR007, OR014, OR021]  ·  **Variables** : RMS, Pic, Crete, Kurtosis
+
+#### Sélection des modèles
+
+![Comparaison des modèles (P3 / P2), indicateurs temporels, cible « classe ».](../images/machine_learning/Tableau_DE_Classe_Tempo.png){#fig-ml-tab-classe-temp width=100%}
+
+Régression logistique, Random Forest et SVM n'ont aucun défaut manqué. Le SVM a le plus de fausses alertes : la **régression logistique** (la meilleure en P3) et la **Random Forest** (la meilleure en P2) sont retenues.
+
+#### Entraînement des deux modèles
+
+| Modèle (réglé en P3) | Hyperparamètres retenus | F1 validation |
+|---|---|---:|
+| Random Forest | max_depth = 8 ; max_features = sqrt ; min_samples_leaf = 1 | 0,937 |
+| Régression logistique | C = 100 | 0,909 |
+
+: Hyperparamètres retenus, indicateurs temporels, cible « classe ». {#tbl-ml-hp-classe-temp}
+
+#### Prédictions sur FE
+
+::: {#fig-ml-fe-classe-temp layout-ncol=2}
+
+![Régression logistique](../images/machine_learning/Confusion_matrix_pred_FE_classe_temp_LOGISTIC_REG.png)
+
+![Random Forest](../images/machine_learning/Confusion_matrix_pred_FE_classe_temp_RANDOM_FOREST.png)
+
+Matrices de confusion sur FE, indicateurs temporels, cible « classe ».
+:::
+
+::: {.callout-note title="Commentaire"}
+**Détection** : aucun défaut manqué pour la régression logistique, 1 pour la Random Forest.
+
+**Fausses alertes élevées** : 190 sur 706 (27 %) pour la régression logistique, presque toutes prédites OR014 ; 144 (20 %) pour la Random Forest.
+
+**Le diamètre n'est pas retrouvé** : IR014 est classé B014 ou B021, OR014 et OR021 sont classés OR007. Ce modèle n'apporte rien par rapport à la @sec-ml-defaut-temp.
+:::
+
+### Localisation × diamètre (« classe ») — indicateurs temporels et spectraux {#sec-ml-classe-spect}
+
+**Cible** : `classe`  ·  **Variables** : les 9 indicateurs temporels et spectraux
+
+#### Sélection des modèles
+
+![Comparaison des modèles (P3 / P2), indicateurs temporels et spectraux, cible « classe ».](../images/machine_learning/Tableau_DE_Classe_Spectraux.png){#fig-ml-tab-classe-spect width=100%}
+
+La **Random Forest** est la seule sans défaut manqué ni fausse alerte. Le **Gradient Boosting** est retenu en second (0,001 de défauts manqués, contre 0,002 pour le SVM).
+
+#### Entraînement des deux modèles
+
+| Modèle (réglé en P3) | Hyperparamètres retenus | F1 validation |
+|---|---|---:|
+| Random Forest | max_depth = None ; max_features = sqrt ; min_samples_leaf = 1 | 0,970 |
+| Gradient Boosting | learning_rate = 0,2 ; max_iter = 300 ; max_leaf_nodes = 15 ; min_samples_leaf = 20 | 0,969 |
+
+: Hyperparamètres retenus, indicateurs temporels et spectraux, cible « classe ». {#tbl-ml-hp-classe-spect}
+
+#### Prédictions sur FE
+
+::: {#fig-ml-fe-classe-spect layout-ncol=2}
+
+![Random Forest](../images/machine_learning/Confusion_matrix_pred_FE_classe_spec_RANDOM_FOREST.png)
+
+![Gradient Boosting](../images/machine_learning/Confusion_matrix_pred_FE_classe_spect_GRADIENT_BOOSTING.png)
+
+Matrices de confusion sur FE, indicateurs temporels et spectraux, cible « classe ».
+:::
+
+::: {.callout-note title="Commentaire"}
+**Fausses alertes au plus bas** : 59 sur 706 (8,4 %) pour la Random Forest, 54 (7,6 %) pour le Gradient Boosting, contre 2 à 3 défauts manqués.
+
+**Le diamètre reste non reconnu** : IR014 est presque toujours classé B014, OR014 et OR021 sont classés OR007. Les indicateurs spectraux améliorent la détection, pas l'estimation de la taille.
+:::
+
+### La dimension du défaut est-elle prévisible ? {#sec-ml-dimension}
+
+Pour une localisation donnée, chaque diamètre correspond à **un seul roulement**. Trois validations de la prédiction du diamètre (0,007", 0,014", 0,021") ont été comparées, sur les seules fenêtres défectueuses et avec huit indicateurs :
+
+| Validation | Roulements testés | Exactitude (%) |
+|---|---|---|
+| Par charge | Déjà vus à d'autres charges | 96,2 à 98,5 |
+| Par localisation | Jamais vus (même banc) | 33 (B) · 59 (IR) · 50 (OR) |
+| Second roulement (côté ventilateur) | Jamais vus (autre roulement) | 66 (IR) · 38 (B) |
+
+: Prédiction du diamètre selon le type de validation. {#tbl-ml-dimension}
+
+::: {.callout-note title="Commentaire"}
+Sur des roulements nouveaux, l'exactitude moyenne tombe à **47,5 %**, pour un hasard à 33 %. Le diamètre de 0,007", reconnu dans 98,7 à 100 % des cas en validation par charge, n'est **plus jamais reconnu**. L'écart entre les deux validations mesure ce que le modèle avait appris par cœur : l'identité des roulements, et non la taille de leur défaut.
+
+Les quelques réussites s'expliquent par des niveaux d'énergie propres à ce banc (0,021" très énergétique, 0,014" faible), et non par une signature physique de la taille.
+
+Retirer les indicateurs dépendant de l'amplitude (indicateurs « sans unité ») ne corrige pas le problème : 44 % (IR) et 53 % (B) sur le second roulement.
+:::
+
+::: {.callout-tip title="À retenir"}
+Avec un seul roulement par combinaison localisation × diamètre, les données CWRU ne permettent pas d'estimer la dimension d'un défaut sur un roulement inconnu. C'est une limite du plan d'expérience, et non une impossibilité physique. Les modèles « classe » (@sec-ml-classe-temp et @sec-ml-classe-spect) le confirment sur FE.
+:::
+
+### Synthèse des prédictions sur FE {#sec-ml-synthese-fe}
+
+| Cible | Variables | Modèle | Défauts manqués | Fausses alertes | Exactitude |
+|---|---|---|---:|---:|---:|
+| defaut | Temporels | SVM RBF | 1 | 153 (22 %) | 69 % |
+| defaut | Temporels | Random Forest | 1 | 164 (23 %) | 62 % |
+| defaut | Temp. + spectraux | Gradient Boosting | **0** | 67 (9,5 %) | 69 % |
+| defaut | Temp. + spectraux | Random Forest | 1 | 77 (10,9 %) | **72 %** |
+| classe | Temporels | Régression logistique | 0 | 190 (27 %) | — |
+| classe | Temporels | Random Forest | 1 | 144 (20 %) | — |
+| classe | Temp. + spectraux | Random Forest | 2 | 59 (8,4 %) | — |
+| classe | Temp. + spectraux | Gradient Boosting | 3 | **54 (7,6 %)** | — |
+
+: Résultats des modèles entraînés sur DE et appliqués au roulement côté ventilateur (1 500 fenêtres défectueuses, 706 saines). {#tbl-ml-synthese-fe}
+
+![RMS par classe, DE (gauche) et FE (droite) ; pointillés : valeur maximale des fenêtres saines.](../images/machine_learning/Boxplot_RMS.png){#fig-ml-boxplot-rms width=100%}
+
+::: {.callout-note title="Commentaire"}
+**Pourquoi des fausses alertes sur FE ?** Le sain mesuré en FE est plus énergétique : max RMS 0,093 g contre 0,078 g en DE (@fig-ml-boxplot-rms). Une partie des fenêtres saines FE dépasse donc les seuils appris sur DE.
+
+**Pourquoi la localisation se dégrade ?** Une même étiquette n'a pas la même signature sur les deux roulements : OR014 est le défaut le **moins** énergétique en DE (RMS env. 0,10 g), et le **plus** énergétique en FE (env. 0,95 g). Les seuils d'amplitude appris sur un roulement ne se transposent pas à un autre.
+
+Les indicateurs spectraux (enveloppe aux fréquences caractéristiques), liés à la physique du défaut plutôt qu'à son niveau, réduisent de moitié les fausses alertes.
+:::
+
+## Conclusion {#sec-ml-conclusion}
+
+1. **Détection** : quels que soient le modèle et le protocole, les défauts sont détectés (0 à 3 fenêtres manquées sur 1 500, y compris sur un second roulement). Ce résultat repose sur l'énergie des chocs et sur un seul roulement sain : le principe est établi, mais les seuils sont propres au banc.
+2. **Localisation** : excellente sur des roulements déjà vus (F1 macro de 0,96 à 0,99 en P3), elle chute sur un roulement nouveau (P4 : 0,41 à 0,62 ; FE : 62 à 72 %). Les indicateurs spectraux sont les plus utiles : meilleur P4, fausses alertes divisées par deux sur FE.
+3. **Dimension du défaut** : non estimable sur un roulement inconnu avec les données CWRU (@sec-ml-dimension).
+4. **Modèles recommandés** : Random Forest et Gradient Boosting sur les 9 indicateurs, cible `defaut`. Ils offrent le meilleur compromis : 0 à 1 défaut manqué et environ 10 % de fausses alertes sur FE.
+
+### Limites
+
+- Un seul roulement sain (4 enregistrements) : les fausses alertes ne sont mesurées que sur ce roulement.
+- Défauts artificiels (électro-érosion), sur un seul banc d'essai, sans bruit industriel.
+- Pour une cible à 10 classes, un seul roulement par classe : la généralisation ne peut pas être testée (P4 impossible).
+
+### Suites proposées
+
+- **Référence métier** : comparer les modèles à la règle simple « RMS > seuil → défaut ». Un modèle de ML doit faire mieux qu'elle pour justifier sa complexité.
+- **Surveillance par ligne de base** : suivre chaque roulement par rapport à son propre état initial, à la manière d'une carte de contrôle. Cette approche ne nécessite pas d'exemples de défauts ; elle est développée avec l'autoencodeur (partie Deep Learning).
+- **Sévérité et durée de vie** : utiliser des essais de dégradation progressive sur plusieurs roulements (IMS, FEMTO/PRONOSTIA) ou un jeu comportant plus de roulements par classe (Paderborn).
+
+<!-- ================= FIN PARTIE MACHINE LEARNING ================= -->
+
+
+
+
+
+
+
+
+{{< pagebreak >}}
 
 # Modèles deep learning
 
@@ -930,7 +937,7 @@ Architecture du réseau. Chaque bloc enchaîne convolution, normalisation, ReLU 
 
 Le premier filtre est long (64 points, soit 5,3 ms), de l'ordre de l'intervalle entre deux chocs d'un défaut de bague intérieure. Chaque valeur du dernier bloc couvre environ 34 ms de signal, soit un tour d'arbre. La moyenne sur le temps rend la décision indépendante de la position des chocs dans la fenêtre. La dernière couche est une régression logistique multinomiale sur les 64 caractéristiques apprises par le réseau.
 
-L'apprentissage minimise l'entropie croisée pondérée par classe (même pondération que `class_weight="balanced"` pour la forêt aléatoire), avec l'optimiseur Adam (taux d'apprentissage 10⁻³), par lots de 64 fenêtres, pendant 8 époques. Les poids initiaux et l'ordre des lots sont tirés au hasard : l'apprentissage est donc répété avec 3 graines aléatoires.
+L'apprentissage minimise l'entropie croisée pondérée par classe (même pondération que `class_weight="balanced"` pour la forêt aléatoire), avec l'optimiseur Adam (taux d'apprentissage 0.001), par lots de 64 fenêtres, pendant 8 époques. Les poids initiaux et l'ordre des lots sont tirés au hasard : l'apprentissage est donc répété avec 3 graines aléatoires.
 
 ### Résultats en validation par diamètre
 
@@ -1003,6 +1010,7 @@ Une probabilité de 0,99 ne signifie pas une certitude. La sortie du réseau mes
 Trois pistes en découlent : comparer avec la forêt aléatoire sur les mêmes fenêtres ; ajouter un contrôle de nouveauté (T² de Hotelling, autoencodeur) qui signale un signal ne ressemblant à aucun roulement connu ; travailler sur un jeu comprenant davantage de roulements par classe, comme celui de l'université de Paderborn (32 roulements, dont 14 à défauts réels).
 
 
+{{< pagebreak >}}
 
 ## Auto-encodeur : détection d'anomalie
 
@@ -1019,15 +1027,15 @@ L'AE fonctionne avec une approche non supervisée : aucun défaut n'est nécessa
 ### Préparation des données
 
 1. Fenêtrage
-On créer des fenêtres dans chaque signal pour avoir d'avantage de données d'entrainement (comme précédement).
-On veille à avoir des fenêtres assez longue pour ne pas perdre d'informations : il faut garder au minimum quelques tours d'arbres, pour avoir quelques répétitions de choc. 
+On crée des fenêtres dans chaque signal pour avoir davantage de données d'entrainement (comme précédemment).
+On veille à avoir des fenêtres assez longues pour ne pas perdre d'informations : il faut garder au minimum quelques tours d'arbres, pour avoir quelques répétitions de choc. 
 
 2. Recouvrement
-Le recouvrement sert à mieux capter les chocs : sans recouvrement, un choc de défaut qui tomberait à cheval sur le partage de deux fenêtres serait vue "à moitié" dans chaque fenêtre, le modèle verrait donc moins bien l'événement du choc. Avec du recouvrement, chaque événement apparaît complet dans au moins une fenêtre, on ne perd pas d'information.
+Le recouvrement sert à mieux capter les chocs : sans recouvrement, un choc de défaut qui tomberait à cheval sur le partage de deux fenêtres serait vue "à moitié" dans chaque fenêtre, le modèle verrait donc moins bien l'événement du choc. Avec du recouvrement, chaque événement apparaît complet dans au moins une fenêtre, on ne perd pas d'informations.
 
 3. Normalisation
 On normalise le signal brut car l'amplitude peut varier (notamment avec la charge) et on cherche à capter les variations des signaux (les chocs), pas les valeurs absolues du signal.
-Si la charge augmente, l'amplitude du signal augmente, et le modèle va détecter une variation et donc un défaut, hors l'augmentation de charge n'est pas un défaut !
+Si la charge augmente, l'amplitude du signal augmente, et le modèle va détecter une variation et donc un défaut, or l'augmentation de charge n'est pas un défaut !
 
 4. Split train-test
 On split par fichier (comme précédement), mais cette fois on ne garde que les signaux sains dans le train, c'est le principe de l'auto-encodeur.
@@ -1070,7 +1078,7 @@ Architecture de notre modèle Conv1D-AE (`1.AutoEncoder.ipynb`)
 
 Forme exigée par Conv1D : (batch, longueur, canaux)
 **Batch** = `None` : laissée libre, le modèle accepte n'importe quel nombre de fenêtres d'un coup. 
-**Longeur** = 1200 : définit selon la taille des fenêtres créées. Correspond au nombre de point de chaque fenêtre, ici 1200 car on fenêtre par échantillon de 0.1s (environ 3 tours d'arbre moteur)
+**Longueur** = 1200 : définit selon la taille des fenêtres créées. Correspond au nombre de point de chaque fenêtre, ici 1200 car on fenêtre par échantillon de 0.1s (environ 3 tours d'arbre moteur)
 **canaux** = 1 : Nombre de canaux d'entrés, ici 1 puisque nous avons une dimension : l'amplitude.
 
 
@@ -1088,7 +1096,7 @@ On garde l'idée générale (les régularités, la périodicité de l'arbre qui 
 Pour maitriser le temps d'entrainement, on ajoute un EarlyStopping : 
 `EarlyStopping(monitor="val_loss", patience=5, min_delta=0.01, restore_best_weights=True)` 
 Il arrête l'entraînement si `val_loss` n'améliore plus d'au moins 0,01 pendant 5 époques (les progrès sont minces après environ 5 à 10 époques) et restaure les meilleurs paramètres.
-Dans les tests réalisés, le modèle continu d'apprendre pendant des dixaines d'époques (parfois jusqu'à 50), alors que la majorité des progrès sont faits dans le 10 premières. L'entrainement est donc restreint ici, pour la rapidité des développements, mais devrait être augmenté pour avoir de meilleure performance (tout en veillant à ne pas overfiter !)
+Dans les tests réalisés, le modèle continue d'apprendre pendant des dizaines d'époques (parfois jusqu'à 50), alors que la majorité des progrès sont faits dans les 10 premières. L'entrainement est donc restreint ici, pour la rapidité des développements, mais devrait être augmenté pour avoir de meilleure performance (tout en veillant à ne pas overfitter !)
 
 
 ### Résultats
@@ -1102,7 +1110,7 @@ La métrique retenue est l'**AUC** (aire sous la courbe ROC) : comme l'AE produi
 La séparation sains/défauts est parfaite : AUC = 1,000 .
 Aucun défaut n'est manqué (FNR=0%), par contre le taux de faux positif (FPR) observé à 6,45% est important mais reste de l'ordre du 1% théorique (le seuil garantit 1 % d'erreur sur le *train*, pas sur le test).
 
-Courbe d'apprentissage : `loss` (train) et `val_loss` (validation) descendent ensemble, donc pas d'overfiting (ce serait `val_loss` qui remonterait) ; l'arrêt précoce intervient quand les progrès deviennent faibles :
+Courbe d'apprentissage : `loss` (train) et `val_loss` (validation) descendent ensemble, donc pas d'overfitting (ce serait `val_loss` qui remonterait) ; l'arrêt précoce intervient quand les progrès deviennent faibles :
 
 ![Courbes loss (entraînement) et val_loss (validation) du Conv1D-AE.](../images/AE_nb1_FitCourbe.png){#fig-ae-loss fig-pos="H" width=80% fig-align="center"}
 
@@ -1127,7 +1135,7 @@ Défaut **réel** (lignes) vs **alarme** déclenchée. 104 faux positifs (sains 
 | réel défaut | 0 | 1615 |
 
 
-### Test de robustesse à la chargee
+### Test de robustesse à la charge
 
 
 Protocole inter-conditions (notebook `2.AE_Tests_Robustesse.ipynb`) :  
@@ -1185,8 +1193,8 @@ Puis données **normalisées** : la marge Δ est nettement plus grande, le seuil
 ### **Conclusion :**
 - La charge a une influence pour ce type de modèle. Il sera donc important de l'entrainer sur des données saines sous différentes charges pour avoir une bonne détection.
 - La normalisation des données permet de gommer l'effet charge, ce qui était un des aspects que nous voulions vérifier.
-- Aucun faux négatif : impératif pour de la détection d'anomalie : mieux vaut trop d'alertes qu'un casse.
-- Avec les données normalisées, le modèles identifie bien les défauts, même avec une faible sévérité.
+- Aucun faux négatif : impératif pour de la détection d'anomalie : mieux vaut trop d'alertes qu'une casse.
+- Avec les données normalisées, le modèle identifie bien les défauts, même avec une faible sévérité.
 
 
 ### **Limites :**
