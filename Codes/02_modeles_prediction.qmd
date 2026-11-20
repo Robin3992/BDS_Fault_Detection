@@ -1026,18 +1026,25 @@ L'AE fonctionne avec une approche non supervisée : aucun défaut n'est nécessa
 
 ### Préparation des données
 
-1. Fenêtrage
+1. Fenêtrage :
+
 On crée des fenêtres dans chaque signal pour avoir davantage de données d'entrainement (comme précédemment).
 On veille à avoir des fenêtres assez longues pour ne pas perdre d'informations : il faut garder au minimum quelques tours d'arbres, pour avoir quelques répétitions de choc. 
 
-2. Recouvrement
+2. Recouvrement :
+
 Le recouvrement sert à mieux capter les chocs : sans recouvrement, un choc de défaut qui tomberait à cheval sur le partage de deux fenêtres serait vue "à moitié" dans chaque fenêtre, le modèle verrait donc moins bien l'événement du choc. Avec du recouvrement, chaque événement apparaît complet dans au moins une fenêtre, on ne perd pas d'informations.
 
-3. Normalisation
+![Recouvrement](../images/Recouvrement.png){#fig-Recouvrement fig-pos="H" width=100% fig-align="center"}
+
+
+3. Normalisation :
+
 On normalise le signal brut car l'amplitude peut varier (notamment avec la charge) et on cherche à capter les variations des signaux (les chocs), pas les valeurs absolues du signal.
 Si la charge augmente, l'amplitude du signal augmente, et le modèle va détecter une variation et donc un défaut, or l'augmentation de charge n'est pas un défaut !
 
-4. Split train-test
+4. Split train-test :
+
 On split par fichier (comme précédement), mais cette fois on ne garde que les signaux sains dans le train, c'est le principe de l'auto-encodeur.
 
 
@@ -1076,10 +1083,14 @@ Architecture de notre modèle Conv1D-AE (`1.AutoEncoder.ipynb`)
 
 :::
 
-Forme exigée par Conv1D : (batch, longueur, canaux)
-**Batch** = `None` : laissée libre, le modèle accepte n'importe quel nombre de fenêtres d'un coup. 
-**Longueur** = 1200 : définit selon la taille des fenêtres créées. Correspond au nombre de point de chaque fenêtre, ici 1200 car on fenêtre par échantillon de 0.1s (environ 3 tours d'arbre moteur)
-**canaux** = 1 : Nombre de canaux d'entrés, ici 1 puisque nous avons une dimension : l'amplitude.
+Forme exigée par Conv1D : (batch, longueur, canaux)  
+
+- **Batch** = `None` : laissée libre, le modèle accepte n'importe quel nombre de fenêtres d'un coup.  
+
+- **Longueur** = 1200 : définit selon la taille des fenêtres créées. Correspond au nombre de point de chaque fenêtre, ici 1200 car on fenêtre par échantillon de 0.1s (environ 3 tours d'arbre moteur)  
+
+- **canaux** = 1 : Nombre de canaux d'entrés, ici 1 puisque nous avons une dimension : l'amplitude.  
+
 
 
 **Pourquoi cette architecture ?**
@@ -1270,10 +1281,10 @@ Comparaison AE vs DAE (data augmentation par bruitage SNR 15→0 dB), évalués 
 Les performances de détection (AUC, FNR) sont quasi identiques entre AE et DAE, mais le seuil p99 du DAE est nettement plus bas : ayant appris à débruiter, il attribue des scores plus faibles aux signaux sains, même bruités. 
 
 **AE classique** : entraîné sur du propre, il apprend à reproduire fidèlement le signal sain tel quel, y compris son bruit ambiant.
-Ses erreurs de reconstruction sur les sains sont donc un peu plus dispersées, et le seuil p99 fixé un peu plus haut (0.0377).
+Ses erreurs de reconstruction sur les sains sont donc un peu plus dispersées, et le seuil p99 fixé un peu plus haut (0.0370).
 
 **DAE** : entraîné avec du bruit en entrée et du propre en cible, il a appris à ignorer le bruit et à ne reconstruire que la structure propre du signal sain.
-Ses erreurs sur les sains (même bruités) sont faibles et très resserrées, et le seuil p99 est beaucoup plus strict (0.0122).
+Ses erreurs sur les sains (même bruités) sont faibles et très resserrées, et le seuil p99 est beaucoup plus strict (0.0153).
 
 Donc le seuil plus bas du DAE indique qu'il sait reconnaître les sains même bruités, avec très peu d'erreur.
 La définition du seuil est plus strict, sans impacter les erreurs sur les défauts qui restent mal reconstruits (FNR = 0). 
