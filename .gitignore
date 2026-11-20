@@ -8,3 +8,4 @@ data/cwru_cache/
 data/features/
 .vdoc.*
 __pycache__/
+*.pdf
