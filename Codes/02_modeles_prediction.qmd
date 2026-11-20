@@ -850,14 +850,83 @@ Puis données **normalisées** : la marge Δ est nettement plus grande, le seuil
 ![Scores par classe sur le test (charge 3 HP), données normalisées, échelle log. Pointillés : max sains (vert) et min défauts (rouge).](../images/AE_nb2_Boxplot_Norm.png){#fig-ae-box-norm fig-pos="H" width=100% fig-align="center"}
 
 
-### **Conclusion :**
+
+### Apprentissage augmenté
+
+Notre auto-encodeur étant capable d'identifier des défauts avec un score raisonnable sur un roulement (avec la normalisation : FNR = 0% et FPR = 1.5%), l'idée est maintenant de lui apprendre à généraliser davantage. Pour cela, on aura plusieurs 2 axes :
+
+- Entrainer le modèle sur les signaux sains de nos 2 roulements (roulement moteur uniquement dans le cas précédent)
+
+- Entrainer le modèle à reconnaitre et à filtrer le bruit d'un signal
+
+
+#### 1. Entrainement avec 2 roulements
+
+On garde la même structure que précédement, mais on chargera également des données du roulement ventillaeur (FE), en plus des celles du roulement moteur (DE).
+
+::: {#tbl-plan-test-de-fe}
+
+| Classe | Capteur | Train | Test |
+|---|---|---:|---:|
+| Défaut | DE | 0 | 1 817 |
+| Défaut | FE | 0 | 2 605 |
+| Sain | DE | 2 018 | 807 |
+| Sain | FE | 2 119 | 706 |
+
+Plan de test : entraînement sur les fenêtres saines **DE *et FE***
+
+:::
+
+On entraine ensuite le modèle dans cette configuration, puis on test ensuite chacun des capteurs séparément :
+
+::: {#tbl-AE-de-fe}
+
+| Capteur | Seuil p99 | AUC | FPR | FNR |
+|---|---:|---:|---:|---:|
+| DE | 0,037 | 1,000 | 0,12 % | 0 % |
+| FE | 0,037 | 1,000 | 0,00 % | 0 % |
+
+Résultats de l'AE évalué séparément par capteur.
+
+:::
+
+On voit que l'ajout des données saines FE lors de l'entrainement augmenté légèrement le seuil (ici 0,037 contre 0.0297 précédemment), ce qui explique que le FPR coté moteur (DE) s'est réduit (de 1,49 % à 0,12 %), puisque le seuil est moins strict.
+Coté ventilateur (FE), le modèle semble "parfait", puisque FPR = FNR = 0.
+
+**Conclusion**
+
+L'ajout de données d'un autre roulement ne permet 
+
+
+
+« Les performances de détection (AUC, FNR) sont quasi identiques entre AE et DAE, mais le seuil p99 du DAE est nettement plus bas : ayant appris à débruiter, il attribue des scores plus faibles aux signaux sains, même bruités. Le seuil est donc plus strict sur les sains → moins de fausses alarmes (FPR plus faible) sans perte de détection (FNR stable) → précision meilleure. »
+
+
+Parce que le seuil p99 est calculé sur les scores des sains du train, et le DAE s'y comporte différemment de l'AE :
+
+AE classique : entraîné sur du propre, il apprend à reproduire fidèlement le signal sain tel quel, y compris son bruit ambiant → ses erreurs de reconstruction sur les sains sont un peu plus dispersées → p99 plus haut (0.0377).
+DAE : entraîné avec du bruit en entrée et du propre en cible, il a appris à ignorer le bruit et à ne reconstruire que la structure propre du signal sain → ses erreurs sur les sains (même bruités) sont faibles et très resserrées → p99 beaucoup plus bas (0.0122).
+Donc le seuil plus bas du DAE = « il reconnaît le sain même bruité, avec très peu d'erreur » → seuil plus strict, sans toucher aux défauts (qui restent mal reconstruits → FNR = 0). C'est exactement le mécanisme du débruitage.
+
+
+
+
+
+
+
+
+
+
+
+
+### Conclusion :
 - La charge a une influence pour ce type de modèle. Il sera donc important de l'entrainer sur des données saines sous différentes charges pour avoir une bonne détection.
 - La normalisation des données permet de gommer l'effet charge, ce qui était un des aspects que nous voulions vérifier.
 - Aucun faux négatif : impératif pour de la détection d'anomalie : mieux vaut trop d'alertes qu'un casse.
 - Avec les données normalisées, le modèles identifie bien les défauts, même avec une faible sévérité.
 
 
-### **Limites :**
+### Limites :
 
 - Les données saines pour l'apprentissage doivent être variées : l'idéal est d'avoir des signaux sains pour chaque état de fonctionnement du roulement, différentes charges et vitesse de rotation par exemple. Ainsi, le modèle aura appris ce qu'est un signal sain en toutes conditions, ce qui lui permettra de mieux différencier sain et défaut.
 - Mauvais apprentissage : veiller à entrainer le modèle uniquement sur des signaux sains. Si le modèle apprend à reconstruire des défauts, cela va générer de faux négatif, ce qu'il faut impérativement éviter.
@@ -865,7 +934,7 @@ Puis données **normalisées** : la marge Δ est nettement plus grande, le seuil
 Les données testées sont dans des conditions optimales : pas de bruit, défaut clairement marqué (même à faible sévérité), etc...
 En situation réelle, les conditions seront beaucoup plus difficiles, les résultats seront probablement moins bon.
 
-### **Suites possibles :**
+### Suites possibles :
 
 - Prendre en compte le ralentissement de la vitesse de rotation lors de l'augmentation de la charge
 - Tester sur des données issues du milieu industriel
