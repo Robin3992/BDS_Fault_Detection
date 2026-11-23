@@ -1026,18 +1026,25 @@ L'AE fonctionne avec une approche non supervisée : aucun défaut n'est nécessa
 
 ### Préparation des données
 
-1. Fenêtrage
+1. Fenêtrage :
+
 On crée des fenêtres dans chaque signal pour avoir davantage de données d'entrainement (comme précédemment).
 On veille à avoir des fenêtres assez longues pour ne pas perdre d'informations : il faut garder au minimum quelques tours d'arbres, pour avoir quelques répétitions de choc. 
 
-2. Recouvrement
+2. Recouvrement :
+
 Le recouvrement sert à mieux capter les chocs : sans recouvrement, un choc de défaut qui tomberait à cheval sur le partage de deux fenêtres serait vue "à moitié" dans chaque fenêtre, le modèle verrait donc moins bien l'événement du choc. Avec du recouvrement, chaque événement apparaît complet dans au moins une fenêtre, on ne perd pas d'informations.
 
-3. Normalisation
+![Recouvrement](../images/Recouvrement.png){#fig-Recouvrement fig-pos="H" width=100% fig-align="center"}
+
+
+3. Normalisation :
+
 On normalise le signal brut car l'amplitude peut varier (notamment avec la charge) et on cherche à capter les variations des signaux (les chocs), pas les valeurs absolues du signal.
 Si la charge augmente, l'amplitude du signal augmente, et le modèle va détecter une variation et donc un défaut, or l'augmentation de charge n'est pas un défaut !
 
-4. Split train-test
+4. Split train-test :
+
 On split par fichier (comme précédement), mais cette fois on ne garde que les signaux sains dans le train, c'est le principe de l'auto-encodeur.
 
 
@@ -1076,10 +1083,14 @@ Architecture de notre modèle Conv1D-AE (`1.AutoEncoder.ipynb`)
 
 :::
 
-Forme exigée par Conv1D : (batch, longueur, canaux)
-**Batch** = `None` : laissée libre, le modèle accepte n'importe quel nombre de fenêtres d'un coup. 
-**Longueur** = 1200 : définit selon la taille des fenêtres créées. Correspond au nombre de point de chaque fenêtre, ici 1200 car on fenêtre par échantillon de 0.1s (environ 3 tours d'arbre moteur)
-**canaux** = 1 : Nombre de canaux d'entrés, ici 1 puisque nous avons une dimension : l'amplitude.
+Forme exigée par Conv1D : (batch, longueur, canaux)  
+
+- **Batch** = `None` : laissée libre, le modèle accepte n'importe quel nombre de fenêtres d'un coup.  
+
+- **Longueur** = 1200 : définit selon la taille des fenêtres créées. Correspond au nombre de point de chaque fenêtre, ici 1200 car on fenêtre par échantillon de 0.1s (environ 3 tours d'arbre moteur)  
+
+- **canaux** = 1 : Nombre de canaux d'entrés, ici 1 puisque nous avons une dimension : l'amplitude.  
+
 
 
 **Pourquoi cette architecture ?**
@@ -1190,23 +1201,126 @@ Puis données **normalisées** : la marge Δ est nettement plus grande, le seuil
 ![Scores par classe sur le test (charge 3 HP), données normalisées, échelle log. Pointillés : max sains (vert) et min défauts (rouge).](../images/AE_nb2_Boxplot_Norm.png){#fig-ae-box-norm fig-pos="H" width=100% fig-align="center"}
 
 
-### **Conclusion :**
+### Apprentissage augmenté
+
+Notre auto-encodeur étant capable d'identifier des défauts avec un score raisonnable sur le roulement moteur (avec la normalisation : FNR = 0% et FPR = 1.5%), l'idée est maintenant de lui apprendre à généraliser davantage. Pour cela, on aura 2 axes :
+
+- Entrainer le modèle sur les signaux sains de nos 2 roulements
+
+- Entrainer le modèle à reconnaitre et à filtrer le bruit d'un signal
+
+
+#### Entrainement avec 2 roulements
+
+On garde la même structure que précédement, mais on charge également les données du roulement ventillateur (FE), en plus des celles du roulement moteur (DE).
+On garde toujours le masque de données saines pour l'entrainement.
+
+::: {#tbl-plan-test-de-fe}
+
+| Classe | Capteur | Train | Test |
+|---|---|---:|---:|
+| Défaut | DE | 0 | 1 817 |
+| Défaut | FE | 0 | 2 605 |
+| Sain | DE | 2 018 | 807 |
+| Sain | FE | 2 119 | 706 |
+
+Plan de test : entraînement sur les fenêtres saines **DE et FE**
+
+:::
+
+On entraine ensuite le modèle dans cette configuration, puis on test ensuite chacun des capteurs séparément :
+
+::: {#tbl-AE-de-fe}
+
+| Capteur | Seuil p99 | AUC | FPR | FNR |
+|---|---:|---:|---:|---:|
+| DE | 0,037 | 1,000 | 0,12 % | 0 % |
+| FE | 0,037 | 1,000 | 0,00 % | 0 % |
+
+Résultats évalué séparément par capteur.
+
+:::
+
+On voit que l'ajout des données saines FE lors de l'entrainement augmente légèrement le seuil (ici 0,037 contre 0.0297 précédemment), ce qui explique que le FPR coté moteur (DE) s'est réduit (de 1,49 % à 0,12 %), puisque le seuil est moins strict.
+Coté ventilateur (FE), le modèle est bien calibré, puisque FPR = FNR = 0.
+
+**Conclusion**
+
+L'ajout de données d'un autre roulement permet d'entrainer le modèle à reconnaitre les signaux sains de façon plus général, pas seulement sur un seul roulement.
+Les résultats sont du même ordre que précédement, on augmente ici la capacité de généralisation du modèle, sans perdre en performance.
+
+#### Entrainement à débruiter
+
+Dans cette partie, on apprendra au modèle à débruiter un signal. Pour cela, on utilisera la méthode d'augmentation de données :
+
+On dupplique les données saines du train, et on ajoute différents niveau de bruit blanc (bruit gaussien) dans chaque dupplica, pour le signal d'entré.
+
+![Niveau de bruit ajouté](../images/DAE_Add_Noise.png){#fig-ae-box-norm fig-pos="H" width=100% fig-align="center"}
+
+Dans cette configuration, nous entraînons le modèle à reconstruire des signaux sains (propre), sur base de signaux bruités.
+Notre modèle va donc apprendre comment ignorer le bruit, il sera alors plus robuste lors de le reconstruction dans un environnement bruité, qui se rapporche d'un environnement industriel.
+
+On entraine le modèle, on test sur les 2 roulements, et on compare au score précédent :
+
+::: {#tbl-ae-vs-dae}
+
+| Config | Capteur | Seuil p99 | AUC | FPR | FNR |
+|---|---|---:|---:|---:|---:|
+| AE (Sains DE,FE) | DE | 0,0370 | 1,000 | 0,12 % | 0 % |
+| AE (Sains DE,FE) | FE | 0,0370 | 1,000 | 0,00 % | 0 % |
+| DAE (Sains DE,FE + Bruit) | DE | 0,0153 | 1,000 | 0,12 % | 0 % |
+| DAE (Sains DE,FE + Bruit) | FE | 0,0153 | 1,000 | 0,14 % | 0 % |
+
+Comparaison AE vs DAE (data augmentation par bruitage SNR 15→0 dB), évalués par capteur.
+
+:::
+
+![DAE_VS_AE](../images/DAE_vs_AE.png){#fig-ae-box-norm fig-pos="H" width=100% fig-align="center"}
+
+
+Les performances de détection (AUC, FNR) sont quasi identiques entre AE et DAE, mais le seuil p99 du DAE est nettement plus bas : ayant appris à débruiter, il attribue des scores plus faibles aux signaux sains, même bruités. 
+
+**AE classique** : entraîné sur du propre, il apprend à reproduire fidèlement le signal sain tel quel, y compris son bruit ambiant.
+Ses erreurs de reconstruction sur les sains sont donc un peu plus dispersées, et le seuil p99 fixé un peu plus haut (0.0370).
+
+**DAE** : entraîné avec du bruit en entrée et du propre en cible, il a appris à ignorer le bruit et à ne reconstruire que la structure propre du signal sain.
+Ses erreurs sur les sains (même bruités) sont faibles et très resserrées, et le seuil p99 est beaucoup plus strict (0.0153).
+
+Donc le seuil plus bas du DAE indique qu'il sait reconnaître les sains même bruités, avec très peu d'erreur.
+La définition du seuil est plus strict, sans impacter les erreurs sur les défauts qui restent mal reconstruits (FNR = 0). 
+Nous avons appris à notre AE à débruité, c'est donc maintenant un DAE.
+
+**Conclusion**
+
+L'augmentation de données avec l'ajout de bruit blanc nous a permis d'entrainer le modèle à débruiter un signal on obtient de meilleurs résultats :  
+
+- le FNR est maintenu à 0, ce qui est primordial
+
+- le FPR est maintenu entre 0,12 % et 0,14 %, qui est sensiblement aussi performant que précédement
+
+- Notre seuil a été abaissé de 0,0370 à 0,0153, ce qui signifie que le modèle identifié "plus strictement" les sains, avec le même FPR. Le modèle est donc plus précis dans cette configuration
+
+
+### Conclusion :
+
 - La charge a une influence pour ce type de modèle. Il sera donc important de l'entrainer sur des données saines sous différentes charges pour avoir une bonne détection.
-- La normalisation des données permet de gommer l'effet charge, ce qui était un des aspects que nous voulions vérifier.
-- Aucun faux négatif : impératif pour de la détection d'anomalie : mieux vaut trop d'alertes qu'une casse.
-- Avec les données normalisées, le modèle identifie bien les défauts, même avec une faible sévérité.
+- Aucun faux négatif : impératif pour de la détection d'anomalie : mieux vaut trop d'alertes qu'un casse.
+- Avec les données normalisées, le modèles identifie bien les défauts, même avec une faible sévérité.
+- L'augmentation de données nous a permis d'obtenir un modèle à la fois plus robuste au bruit, et également plus précis.
 
+### Limites :
 
-### **Limites :**
+- Les données saines pour l'apprentissage doivent être variées : l'idéal est d'avoir des signaux sains pour une multitude d'état de fonctionnement, et on a vu comment s'aider de la technique d'augmentation de données. Ainsi, le modèle aura appris ce qu'est un signal sain dans de nombreuses conditions, ce qui lui permettra de mieux différencier sain et défaut de différents environnements.
 
-Les données testées sont dans des conditions optimales : pas de bruit, défaut clairement marqué (même à faible sévérité), etc...
-En situation réelle, les conditions seront beaucoup plus difficiles, les résultats seront probablement moins bon.
+- Mauvais apprentissage : veiller à entrainer le modèle **uniquement sur des signaux sains**. Si le modèle apprend à reconstruire des défauts, cela va générer de faux négatif, ce qu'il faut impérativement éviter.
 
-### **Suites possibles :**
+Les données testées sont dans des conditions optimales, même en leur ajoutant du bruit.
+En situation réelle, les conditions seront plus difficiles, les résultats seront probablement moins bon.
+
+### Suites possibles :
 
 - Prendre en compte le ralentissement de la vitesse de rotation lors de l'augmentation de la charge
-- Tester sur des données issues du milieu industriel
-- Améliorer l'étape de traitement de signal dans le préprocessing pour filtrer les parasites et le bruit
+- Entrainer et tester sur des données issues du milieu industriel
 - Améliorer la définition des paramètres notamment :
     - Le seuil d'identification : joue sur le ratio **nombre alerte vs risque**
     - La taille des fenêtres et le callback: joue sur le ratio **performance vs coût (de calcul)**
