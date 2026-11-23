@@ -1,8 +1,8 @@
-"""Traitement du signal vibratoire : filtrage, enveloppe, spectres.
-
-Fonctions pures : entrée = array numpy, sortie = array ou (freqs, amp).
-Aucune entrée/sortie fichier, aucune variable globale modifiée.
 """
+Différentes fonctions relatives au traitement du signal vibratoire : filtrage, enveloppe, spectres.
+
+"""
+
 import numpy as np
 import scipy.signal as sci
 from scipy.signal import hilbert
@@ -27,14 +27,6 @@ def spectre_fft(x, fs, n_fft=None):
     amp = np.abs(np.fft.rfft((x - np.mean(x)) * fenetre, n=n_fft)) / np.sum(fenetre) * 2
     return freqs, amp
 
-
-# def filtrer_passe_bande(x, fs, bande=BANDE_RESONANCE, ordre=4):
-#     """Filtre Butterworth passe-bande, filtrage zero-phase (sosfiltfilt) :
-#     les chocs ne sont pas décalés dans le temps."""
-#     sos = sci.butter(ordre, [bande[0] / (fs / 2), bande[1] / (fs / 2)],
-#                      btype="bandpass", output="sos")
-#     return sci.sosfiltfilt(sos, x)
-
 def creer_filtre(fs, bande=BANDE_RESONANCE, ordre=4):
     """Crée le filtre passe-bande (SOS) UNE FOIS pour toutes les fenêtres."""
     return sci.butter(ordre, [bande[0]/(fs/2), bande[1]/(fs/2)],
@@ -47,11 +39,11 @@ def filtrer_passe_bande(x, fs, bande=BANDE_RESONANCE, ordre=4, sos=None):
 
 
 def extraire_enveloppe(x):
-    """Enveloppe par transformée de Hilbert, centrée (retire le pic à 0 Hz)."""
+    """Enveloppe par transformée de Hilbert, centrée (retire le pic à 0 Hz avec - np.mean(env))."""
     env = np.abs(hilbert(x))
     return env - np.mean(env)
 
-
+# 
 def spectre_enveloppe(x, fs, bande=BANDE_RESONANCE, n_fft=N_FFT, sos=None):
     """Chaîne complète d'analyse d'enveloppe : passe-bande + Hilbert + FFT.
     Renvoie (fréquences, amplitudes) du spectre de l'enveloppe."""
