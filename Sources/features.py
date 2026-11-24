@@ -1,4 +1,8 @@
-"""Construction de la table des indicateurs et préparation de la modélisation."""
+"""
+Fonctions relatives à la création de la table de données
+Utilise notamment les fonctions selectionner() et charger() pour l'import de données
+"""
+
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler

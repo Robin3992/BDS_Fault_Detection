@@ -1,4 +1,4 @@
-"""Constantes globales du projet (une seule source de vérité)."""
+"""Constantes globales du projet"""
 from .path import trouver_racine
 
 RACINE = trouver_racine()

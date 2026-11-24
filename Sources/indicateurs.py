@@ -1,10 +1,14 @@
-"""Extraction d'indicateurs (features) sur une fenêtre de signal.
+"""
+fonctions de calcul d'indicateurs (features) sur une fenêtre de signal.
 
 Deux familles :
   - indicateurs_temporels : RMS, Pic, facteur de crête, kurtosis
   - indicateurs_spectraux : amplitudes et ratios des raies caractéristiques
     (BPFI, BPFO, BSF, FTF) + fréquence du pic dominant, issus du spectre
     d'enveloppe (passe-bande + Hilbert + FFT).
+
+Les indicateurs spectraux ont 2 versions relativement proche, car elles ont été mises en places 
+par 2 membres du projets, puis comparées ensuite pour tester leurs avantages et limites.
 """
 import numpy as np
 from scipy.stats import kurtosis
@@ -36,7 +40,11 @@ def indicateurs_spectraux(x, fs, rpm, roulement="DE",
                   indépendante de l'amplitude absolue du signal)
     + f_pic : fréquence du pic dominant du spectre d'enveloppe sous 1 kHz.
     """
+
+    
     freqs, amp = spectre_enveloppe(x, fs, sos=sos)
+
+    # Récupération des fréquences caractéristiques associées au roulement souhaité
     fc = freqs_caracteristiques(roulement, rpm)
     res = {}
     for nom, f in fc.items():
@@ -45,7 +53,7 @@ def indicateurs_spectraux(x, fs, rpm, roulement="DE",
     total = sum(res[f"amp_{F}_1"] for F in RAIES)
     for F in RAIES:
         res[f"ratio_{F}"] = res[f"amp_{F}_1"] / total if total > 0 else 0.0
-    # Suppression de f_pic car il indique des fréquences brutes, et n'est donc pas transposable sur différents roulement
+    # /!\ f_pic : indique une fréquence brute en Hz, il n'est donc pas transposable sur différent roulement.
     dans_bande = freqs <= 1000
     res["f_pic"] = float(freqs[dans_bande][np.argmax(amp[dans_bande])])
     return res
@@ -54,7 +62,7 @@ def indicateurs_spectraux(x, fs, rpm, roulement="DE",
 COLONNES_TEMPORELS = ["RMS", "Pic", "Crete", "Kurtosis"]
 COLONNES_SPECTRAUX = ([f"amp_{F}_{k}" for F in RAIES for k in HARMONIQUES]
                       + [f"ratio_{F}" for F in RAIES] 
-                      + ["f_pic"] # Suppression de f_pic car il indique des fréquences brutes, et n'est donc pas transposable sur différents roulement
+                      + ["f_pic"]
                     )
 
 
