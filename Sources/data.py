@@ -1,4 +1,13 @@
-"""Chargement des données CWRU : catalogue des 161 fichiers et fonction charger()."""
+"""
+=== Chargement des données CWRU ===
+https://engineering.case.edu/bearingdatacenter/download-data-file
+
+Catalogue de données extrait du site CWRU (161 fichiers, hardcoded)
+Fonctions permettant de charger les données souhaitées :
+- selectionner()    : permet de sélectionner plusieurs fichiers du catalogue par critères
+- charger()         : permet de charger les données sélectionnées
+"""
+
 import urllib.request
 
 import numpy as np
