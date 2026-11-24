@@ -1,0 +1,140 @@
+---
+title: "Détection et diagnostic des défauts de roulement"
+subtitle: "Synthèse, modèle proposé et regard critique — jeu de données CWRU"
+author:
+  - Blaise Boutolleau
+  - Mourad Mellal
+  - Robin Grivet
+date: today
+lang: fr
+format:
+  html:
+    toc: true
+    number-sections: true
+    code-fold: true
+    embed-resources: true
+  pdf:
+    toc: true
+    number-sections: true
+    echo: false
+---
+
+# La question posée
+Ce rapport fait la synthèse des analyses du projet, présentées en détail dans le rapport d'analyse exploratoire (rapport 1) et le rapport sur les modèles de prédiction (rapport 2). Il propose un modèle final et porte un regard critique sur le travail réalisé.
+
+Le projet pose trois questions, de difficulté croissante :
+
+::: {#tbl-questions}
+
+| Tâche | Question | Intérêt industriel |
+|---|---|---|
+| Détection | Le roulement est-il défectueux ? | Déclencher une intervention |
+| Localisation | Où est le défaut : IR, B ou OR ? | Orienter le diagnostic |
+| Taille | Quelle est la taille du défaut ? | Estimer la gravité |
+
+Les trois questions posées aux données.
+
+:::
+
+Une réponse n'a de valeur que si elle reste juste sur un roulement **que le modèle n'a jamais vu** : c'est la situation d'une machine surveillée en usine. Chaque résultat est donc rapporté à l'un des trois niveaux de validation suivants, du plus facile au plus exigeant :
+
+::: {#tbl-niveaux}
+
+| Niveau | Ce qui est testé |
+|---|---|
+| Roulement déjà vu | Même roulement, à une charge non vue |
+| Roulement nouveau | Autre roulement du même banc |
+| Second roulement | Roulement côté ventilateur (FE) |
+
+Les trois niveaux de validation utilisés dans ce rapport.
+
+:::
+
+Seuls les deux derniers niveaux renseignent sur la capacité d'un modèle à fonctionner sur une machine réelle. Le premier mesure surtout sa capacité à reconnaître des roulements qu'il connaît déjà.
+
+# Les données et leur limite principale
+
+Les données proviennent du banc d'essai du Case Western Reserve University (CWRU) Bearing Data Center. L'analyse porte sur 40 enregistrements échantillonnés à 12 kHz par l'accéléromètre côté entraînement (DE) : le roulement sain et les défauts de bague intérieure (IR), de bille (B) et de bague extérieure à 6 h (OR), de diamètres 0,007", 0,014" et 0,021", chacun mesuré à 4 charges (0 à 3 HP). Les défauts créés sur le roulement côté ventilateur (FE) servent de test externe.
+
+**Quarante enregistrements, mais dix roulements.** Les défauts ont été usinés par électroérosion, un roulement par combinaison de localisation et de diamètre. Les 4 charges sont des mesures répétées **du même roulement** :
+
+::: {#tbl-plan}
+
+| Localisation | 0,007" | 0,014" | 0,021" |
+|---|:-:|:-:|:-:|
+| IR | 1 | 1 | 1 |
+| B | 1 | 1 | 1 |
+| OR (6 h) | 1 | 1 | 1 |
+
+Nombre de roulements défectueux par case, côté entraînement. S'y ajoute un seul roulement sain. Chaque roulement est mesuré à 4 charges.
+
+:::
+
+Chaque enregistrement est découpé en fenêtres de quelques dixièmes de seconde, ce qui donne plusieurs milliers d'exemples. Mais ces fenêtres sont presque identiques au sein d'un même enregistrement : **98,9 % de la variabilité du RMS se situe entre enregistrements**. Ce sont des pseudo-réplicats. La taille d'échantillon réelle n'est pas le nombre de fenêtres, mais le nombre de roulements.
+
+Trois conséquences pèsent sur toute la suite :
+
+1. **La taille du défaut est confondue avec le roulement.** Chaque taille n'existe qu'une fois par localisation : on ne peut pas séparer l'effet de la taille de celui du roulement et de son montage.
+2. **Deux roulements seulement par localisation** sont disponibles pour apprendre, quand le troisième sert au test. C'est trop peu pour apprendre ce qui est commun à tous les défauts d'un même type.
+3. **Un seul roulement sain.** Les taux de fausses alertes sont tous mesurés sur ce roulement, à des charges différentes.
+
+Ce sont des limites du **plan d'expérience**, et non des méthodes. Elles expliquent l'essentiel des résultats qui suivent.
+
+# Ce que les données montrent
+
+# Les modèles comparés
+
+# Le modèle proposé
+
+## Principe : apprendre le sain, signaler l'écart
+
+Le modèle proposé fonctionne en deux temps :
+
+1. **Détection** par un autoencodeur convolutif, entraîné uniquement sur les signaux sains de la machine surveillée. L'erreur de reconstruction sert de score d'anomalie ; le seuil d'alarme est le percentile 99 des scores des sains d'apprentissage. Dans un environnement bruité, on utilise sa version débruiteuse (DAE), entraînée sur des copies bruitées des signaux sains.
+2. **Diagnostic indicatif**, déclenché seulement après une alarme : une forêt aléatoire sur les 9 indicateurs temporels et spectraux propose une localisation (IR, B ou OR), confirmée par la lecture du spectre d'enveloppe aux fréquences BPFI et BPFO. Sur un roulement nouveau, cette localisation n'est juste qu'entre une fois sur deux et trois fois sur quatre : c'est une piste pour l'expert, pas une décision.
+
+La taille du défaut n'est pas estimée : les données ne le permettent pas.
+
+## Pourquoi un autoencodeur plutôt qu'un seuil sur le RMS
+
+**Sur le roulement d'apprentissage, le RMS suffit.** Avec un seuil fixé sur les sains de 0 à 2 HP, la règle « RMS supérieur au seuil » ne commet aucune erreur à 3 HP, une charge non vue, contre 1 à 2 % de fausses alertes pour l'autoencodeur. Mais elle sépare les défauts de justesse : la fenêtre la plus faible du défaut de bille de 0,014" ne dépasse le seuil que d'environ 5 %. L'énergie dans la bande de résonance (RMS_bande) sépare beaucoup mieux, le défaut le plus faible valant le double du sain, mais le niveau du roulement sain y double presque entre 0 et 3 HP : le même seuil déclenche alors 100 % de fausses alertes à 3 HP. Un seuil sur une amplitude est donc soit peu discriminant, soit sensible aux conditions de fonctionnement. On pourrait ajuster la ligne de base à la charge, comme dans une carte de contrôle de régression, mais il faudrait mesurer la charge en continu. L'autoencodeur, qui travaille sur le signal normalisé, reste à 1 à 2 % de fausses alertes à 3 HP sans connaître la charge.
+
+**Sur un roulement jamais vu, l'autoencodeur se transpose, pas le RMS.** Entraîné uniquement sur les sains du roulement côté entraînement (0 à 2 HP), l'autoencodeur est appliqué tel quel au roulement côté ventilateur. Sur trois apprentissages successifs, il ne manque aucun défaut et sépare parfaitement sains et défauts (AUC = 1). Le taux de fausses alertes à 3 HP varie de 5,5 à 10,5 % selon l'apprentissage (médiane 5,7 %), car le seuil est calculé sur les données d'apprentissage (@tbl-ae-transfert). Dans les mêmes conditions, le seuil sur le RMS déclenche 98 % de fausses alertes : il doit être réappris pour chaque roulement.
+
+::: {#tbl-ae-transfert}
+
+| Essai | DE, 3 HP | FE, toutes charges | FE, 3 HP |
+|---|---:|---:|---:|
+| 1 | 1,1 % | 3,4 % | 5,5 % |
+| 2 | 2,0 % | 6,6 % | 10,5 % |
+| 3 | 1,2 % | 3,9 % | 5,7 % |
+
+Fausses alertes de l'autoencodeur entraîné sur les seuls sains DE (0 à 2 HP), pour trois apprentissages. Dans tous les cas : AUC = 1, aucun défaut manqué.
+
+:::
+
+Ces deux résultats tiennent à trois propriétés de l'autoencodeur :
+
+- **Il apprend la forme complète du signal sain**, alors que le RMS le résume en un seul nombre. Un changement de forme sans hausse d'énergie (chocs faibles, apparition d'une fréquence) reste en principe détectable.
+- **Il est robuste aux variations d'amplitude** : sur signal normalisé, il est insensible à la charge et au gain du capteur ; dans sa version débruiteuse, il tolère le bruit ambiant.
+- **Il s'étend sans redéfinir d'indicateurs** à plusieurs capteurs, à de nouvelles conditions de fonctionnement ou à un autre roulement.
+
+Comme une carte de contrôle, et contrairement aux classifieurs supervisés, il n'a besoin que de données saines, faciles à enregistrer après la pose d'un roulement neuf. En contrepartie, il demande un entraînement, des réglages et une maintenance, et sa décision est moins facile à expliquer.
+
+## Le RMS comme garde-fou
+
+Une carte de contrôle du RMS, à ligne de base propre à chaque roulement, est conservée en parallèle. Le RMS est retenu plutôt que RMS_bande, trop sensible à la charge. Simple et explicable, cette carte sert de contrôle de cohérence : une alarme de l'autoencodeur sans hausse d'énergie signale un changement de forme du signal à examiner ; une hausse d'énergie sans alarme de l'autoencodeur signale un modèle à revoir.
+
+## Ce qu'il reste à démontrer
+
+Les données CWRU établissent deux avantages de l'autoencodeur : sa robustesse à une charge non vue sans avoir à la mesurer, et sa transposition à un autre roulement sans nouvelle ligne de base. D'autres points restent à vérifier :
+
+- **la détection précoce** : sur un défaut naissant, l'autoencodeur donne-t-il l'alarme avant le RMS ? Les défauts du CWRU étant francs et énergétiques, le test décisif porte sur des données de dégradation progressive : lequel des détecteurs alerte le premier, sans fausse alerte auparavant ?
+- **la transposition à une autre machine** : le roulement côté ventilateur est un autre roulement, mais sur le même moteur et dans les mêmes enregistrements ;
+- **la robustesse en conditions réelles** : bruit industriel, autres capteurs ;
+- **la stabilité du seuil d'alarme** : calculé sur les données d'apprentissage, il varie d'un apprentissage à l'autre ; une calibration sur des sains mis de côté le rendrait plus stable et moins optimiste ;
+- **la comparaison avec une carte de contrôle ajustée sur la charge**, qui pourrait égaler l'autoencodeur lorsque la charge est mesurée.
+
+# Analyse autocritique
+
+# Perspectives
