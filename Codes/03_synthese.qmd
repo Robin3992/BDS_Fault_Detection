@@ -80,11 +80,42 @@ Trois conséquences pèsent sur toute la suite :
 
 Ce sont des limites du **plan d'expérience**, et non des méthodes. Elles expliquent l'essentiel des résultats qui suivent.
 
-# Ce que les données montrent
-
 # Les modèles comparés
 
 # Le modèle proposé
+
+## Principe : apprendre le sain, signaler l'écart
+
+Le modèle proposé est un **autoencodeur convolutif**. Il se compose d'un encodeur, qui compresse une fenêtre de signal en un résumé réduit, et d'un décodeur, qui reconstruit la fenêtre à partir de ce résumé. Il est entraîné uniquement sur des signaux sains : il apprend à quoi ressemble un roulement sain. Un signal défectueux, avec des chocs qu'il n'a jamais vus, est mal reconstruit. L'erreur de reconstruction sert donc de score d'anomalie, et une alarme est déclenchée lorsqu'elle dépasse un seuil fixé sur les signaux sains.
+
+## Ses avantages
+
+**Il n'a besoin que de données saines.** L'apprentissage est non supervisé : aucun exemple de défaut n'est nécessaire, alors que les défauts sont rares et coûteux à obtenir en usine. Il suffit d'enregistrer le signal de la machine après la pose d'un roulement neuf.
+
+**Il détecte la forme du signal, pas son niveau.** Chaque fenêtre est normalisée avant d'entrer dans le modèle. L'amplitude du signal, qui varie notamment avec la charge, n'est donc pas interprétée comme un défaut : le modèle réagit aux chocs, et non aux changements de conditions de fonctionnement.
+
+**Il est adapté à la nature du signal.** Les convolutions détectent des motifs locaux et répétés, comme les chocs successifs d'un défaut, quelle que soit leur position dans la fenêtre, avec peu de paramètres.
+
+**Il généralise lorsqu'on élargit les données saines.** Entraîné sur les signaux sains de plusieurs roulements, il apprend ce qu'est un signal sain de façon plus générale, sans perte de performance.
+
+**Il peut apprendre à ignorer le bruit.** Dans sa version débruiteuse (DAE), il est entraîné à reconstruire un signal sain propre à partir de copies bruitées. Il devient plus robuste au bruit ambiant d'un environnement industriel, et reconnaît les signaux sains plus strictement.
+
+**Il privilégie la sécurité.** Aucun défaut n'a été manqué dans les essais réalisés : en détection d'anomalie, mieux vaut une alerte de trop qu'une casse.
+
+**Il s'étend sans redéfinir d'indicateurs.** Le même cadre s'applique à plusieurs capteurs, à de nouvelles conditions de fonctionnement ou à un autre roulement : il suffit de l'entraîner sur leurs signaux sains.
+
+En contrepartie, il demande un entraînement, des réglages (taille des fenêtres, architecture, seuil) et une maintenance, et sa décision est moins facile à expliquer qu'un indicateur physique.
+
+## Ce qu'il reste à démontrer
+
+- **La détection précoce** : les défauts du CWRU sont francs et énergétiques. Sur un défaut naissant, à quel moment l'autoencodeur donne-t-il l'alarme ? Seules des données de dégradation progressive permettent de répondre.
+- **La transposition à une autre machine** : les essais portent sur un seul banc d'essai.
+- **La robustesse en conditions réelles** : bruit industriel, autres capteurs, vitesse variable.
+- **Le réglage du seuil d'alarme** : il dépend de l'apprentissage, et un calibrage sur des signaux sains mis de côté le rendrait plus fiable.
+
+# Analyse autocritique
+
+# Perspectives
 
 ## Principe : apprendre le sain, signaler l'écart
 
@@ -134,7 +165,3 @@ Les données CWRU établissent deux avantages de l'autoencodeur : sa robustesse 
 - **la robustesse en conditions réelles** : bruit industriel, autres capteurs ;
 - **la stabilité du seuil d'alarme** : calculé sur les données d'apprentissage, il varie d'un apprentissage à l'autre ; une calibration sur des sains mis de côté le rendrait plus stable et moins optimiste ;
 - **la comparaison avec une carte de contrôle ajustée sur la charge**, qui pourrait égaler l'autoencodeur lorsque la charge est mesurée.
-
-# Analyse autocritique
-
-# Perspectives
