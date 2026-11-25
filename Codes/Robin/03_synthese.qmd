@@ -19,7 +19,58 @@ format:
     echo: false
 ---
 
-# Ajustements rapport N°2 modeling : Auto-Encodeur 
+# Ajustements rapport N°2 modelisation : Auto-Encodeur 
 
+Nous nous sommes aperçus de plusieurs approximations/incohérences dans la partie Auto-Encodeur que nous avons clarifiés :
 
+## La taille des fenêtres
 
+La taille des fenêtres avait été réduite dans le cadre des développements car cela permettait :
+
+- d'augmenter le nombre d'échantillon (durée signal/durée fenêtre = nombre d'échantillons)  
+- de réduire le temps d'entrainement par échantillon sans perte d'information (en gardant quelques tours d'arbre moteur)  
+
+Cette configuration n'était cependant pas adaptée pour être comparable aux analyses précédentes.
+Des corrections ont donc été apportées dans les notebooks en ce sens.
+
+**Impacts**
+
+Ce changement de taille de fenêtre a des conséquences sur deux points : l'architecture du modèle et les performances obtenues.
+
+2.2.4 Le modèle Conv1D-AE
+
+::: {#tbl-ae-architecture}
+
+| Couche | Type | Sortie | Paramètres |
+|---|---|---|---:|
+| Entrée | InputLayer | (None, **2048**, 1) | 0 |
+| conv1d | Conv1D, 32 filtres, noyau 7 | (None, **2048**, 32) | 256 |
+| max_pooling1d | ÷2 | (None, **1024**, 32) | 0 |
+| conv1d_1 | Conv1D, 16 filtres, noyau 5 | (None, **1024**, 16) | 2 576 |
+| max_pooling1d_1 | ÷2 | (None, **512**, 16) | 0 |
+| conv1d_2 | Conv1D, 8 filtres, noyau 3 — **bottleneck** | (None, **512**, 8) | 392 |
+| conv1d_3 | Conv1D, 16 filtres, noyau 5 | (None, **512**, 16) | 656 |
+| up_sampling1d | ×2 | (None, **1024**, 16) | 0 |
+| conv1d_4 | Conv1D, 32 filtres, noyau 7 | (None, **1024**, 32) | 3 616 |
+| up_sampling1d_1 | ×2 | (None, **2048**, 32) | 0 |
+| conv1d_5 (sortie) | Conv1D, 1 filtre, noyau 7 | (None, **2048**, 1) | 225 |
+| Total | | | 7 721 |
+
+:::
+
+2.2.5 Résultats
+
+| AUC | FPR (fausses alarmes) | FNR (défauts manqués) |
+|----:|----------------------:|----------------------:|
+| 1,000 | **1,06 %**  (contre 6.45 % avant correction) | 0,00 % |
+
+Le seuil est toujours fixé au pourcentile 99 sur les données train, ce qui laisse théoriquement 1 % de faux positifs.
+Appliqué sur les données de test, on constate que le taux de fausses alarmes est désormais de 1,06 %, ce qui se rapproche de notre seuil théorique de 1 %.  
+  
+L'ensemble des résultats sont donc différents de ceux présentés dans le rapport de modélisation, mais restent dans les mêmes ordres de grandeur, et permettent de tirer les mêmes conclusions.
+
+## Limites des données 
+
+Dans la partie **2.2.7 Apprentissage augmenté**, l'idée est d'augmenter le nombre et la diversité des données, pour améliorer l'apprentissage du modèle.  
+L'apprentissage a été fait sur les données saines des **2 roulements** (avec un split par fichier pour éviter les fuites de données), puis chaque roulement a été testé séparément.  
+Dans cette configuration, les données saines côté test sont donc issues du même roulement, du même montage, seul la charge diffère, ce qui est une limite à notre plan de test.  
