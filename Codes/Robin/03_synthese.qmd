@@ -1,0 +1,25 @@
+---
+title: "Détection et diagnostic des défauts de roulement"
+subtitle: "Synthèse, modèle proposé et regard critique — jeu de données CWRU"
+author:
+  - Blaise Boutolleau
+  - Mourad Mellal
+  - Robin Grivet
+date: today
+lang: fr
+format:
+  html:
+    toc: true
+    number-sections: true
+    code-fold: true
+    embed-resources: true
+  pdf:
+    toc: true
+    number-sections: true
+    echo: false
+---
+
+# Ajustements rapport N°2 modeling : Auto-Encodeur 
+
+
+
