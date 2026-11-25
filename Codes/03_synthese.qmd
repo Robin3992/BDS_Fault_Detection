@@ -79,8 +79,16 @@ Trois conséquences pèsent sur toute la suite :
 3. **Un seul roulement sain.** Les taux de fausses alertes sont tous mesurés sur ce roulement, à des charges différentes.
 
 Ce sont des limites du **plan d'expérience**, et non des méthodes. Elles expliquent l'essentiel des résultats qui suivent.
+{{< pagebreak >}}
 
-# Les modèles comparés
+# Tableau comparatif des modèles testés
+
+
+![Tableau comparatif des modèles testés](../images/rapport_3_synthese/comparaison_modeles.png){#fig-ml-p3 width=115% fig-align="center"}
+
+
+
+
 
 # Le modèle proposé
 
