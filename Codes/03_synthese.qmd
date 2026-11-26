@@ -88,16 +88,12 @@ Ce sont des limites du **plan d'expérience**, et non des méthodes. Elles expli
 {{< pagebreak >}}
 
 
-<<<<<<< HEAD
-![Tableau comparatif des modèles testés](../images/rapport_3_synthese/comparaison_modeles.png){#fig-ml-p3 width=85% fig-align="center"}
-=======
 
 # Compléments du rapport de modélisation (Auto-Encodeur)
 
 Nous nous sommes aperçus de plusieurs approximations dans la partie Auto-Encodeur du rapport de modélisation, que nous voulons clarifier :
 
 ## La taille des fenêtres
->>>>>>> main
 
 La taille des fenêtres avait été réduite dans le cadre des développements car cela permettait :
 
@@ -115,194 +111,6 @@ Ce changement de taille de fenêtre a des conséquences sur deux points : l'arch
 
 ::: {#tbl-ae-architecture}
 
-<<<<<<< HEAD
-**Il détecte la forme du signal, pas son niveau.** Chaque fenêtre est normalisée avant d'entrer dans le modèle. L'amplitude du signal, qui varie notamment avec la charge, n'est donc pas interprétée comme un défaut : le modèle réagit aux chocs, et non aux changements de conditions de fonctionnement.
-
-**Il est adapté à la nature du signal.** Les convolutions détectent des motifs locaux et répétés, comme les chocs successifs d'un défaut, quelle que soit leur position dans la fenêtre, avec peu de paramètres.
-
-**Il généralise lorsqu'on élargit les données saines.** Entraîné sur les signaux sains de plusieurs roulements, il apprend ce qu'est un signal sain de façon plus générale, sans perte de performance.
-
-**Il peut apprendre à ignorer le bruit.** Dans sa version débruiteuse (DAE), il est entraîné à reconstruire un signal sain propre à partir de copies bruitées. Il devient plus robuste au bruit ambiant d'un environnement industriel, et reconnaît les signaux sains plus strictement.
-
-**Il privilégie la sécurité.** Aucun défaut n'a été manqué dans les essais réalisés : en détection d'anomalie, mieux vaut une alerte de trop qu'une casse.
-
-**Il s'étend sans redéfinir d'indicateurs.** Le même cadre s'applique à plusieurs capteurs, à de nouvelles conditions de fonctionnement ou à un autre roulement : il suffit de l'entraîner sur leurs signaux sains.
-
-En contrepartie, il demande un entraînement, des réglages (taille des fenêtres, architecture, seuil) et une maintenance, et sa décision est moins facile à expliquer qu'un indicateur physique.
-
-## Ce qu'il reste à démontrer
-
-- **La détection précoce** : les défauts du CWRU sont francs et énergétiques. Sur un défaut naissant, à quel moment l'autoencodeur donne-t-il l'alarme ? Seules des données de dégradation progressive permettent de répondre.
-- **La transposition à une autre machine** : les essais portent sur un seul banc d'essai.
-- **La robustesse en conditions réelles** : bruit industriel, autres capteurs, vitesse variable.
-- **Le réglage du seuil d'alarme** : il dépend de l'apprentissage, et un calibrage sur des signaux sains mis de côté le rendrait plus fiable.
-
-{{< pagebreak >}}
-
-# Analyse et difficultés rencontrées durant le projet {#sec-difficultes}
-
-## Le projet data science, découverte d'un nouvel univers {#sec-diff-univers}
-
-### Des principes physiques hors du programme de la formation
-
-Aucun membre du groupe n'avait d'expérience en analyse vibratoire. Exploiter les signaux vibratoires a exigé des notions de traitement du signal non abordées en formation : **transformée de Fourier**, filtrage dans une bande de fréquences, **extraction d'enveloppe** (transformée de Hilbert) et fréquences caractéristiques des roulements (BPFI, BPFO, BSF). Ces notions avaient été abordées lors de notre cursus scolaire, plus ou moins lointain…
-
-### Un type de données inhabituel : des calculs supplémentaires, et un risque associé
-
-Avant toute modélisation, il a fallu construire la table d'apprentissage :
-
-- **découper** chaque enregistrement en fenêtres de courte durée
-- **calculer des indicateurs** sur chaque fenêtre (RMS, kurtosis, indicateurs spectraux…)
-
-Même si l'on trouve des fonctions Python « prêtes à l'emploi », ces notions ont rendu l'analyse exploratoire plus longue et plus complexe : chaque calcul ajouté peut introduire une erreur ou une perte d'information, et donc déformer les données.
-
-::: {.callout-tip title="À retenir"}
-Cette expérience met en évidence que la data science peut s'appliquer à des domaines très variés.
-
-Par ailleurs, il faut veiller à ce que chaque calcul ou transformation de données soit validé par les connaissances métier.
-:::
-
-## Prévisionnel : l'incertitude sur les données du projet {#sec-diff-previsionnel}
-
-Notre objectif initial était de travailler sur des données d'entreprise (I-Care), auxquelles nous n'avons finalement pas eu accès. Le sujet restait proche, mais la nature et le volume de ces données auraient été très différents, et ils conditionnaient directement l'approche du projet.
-
-Cette situation a créé une forte incertitude sur l'organisation du travail :
-
-- des hésitations sur les tâches à réaliser, dues à l'absence de positionnement « métier »
-- un démarrage plus lent, faute de savoir sur quelles données le projet porterait
-
-::: {.callout-tip title="À retenir"}
-Avant de lancer un projet, il faut parfois investir du temps pour s'assurer que les données seront disponibles à temps et avec une qualité suffisante, afin de ne pas engager un projet qui ne pourrait pas aboutir.
-:::
-
-## Les connaissances métier {#sec-diff-metier}
-
-Le groupe disposait de bases en maintenance industrielle, mais ne connaissait pas la place de l'analyse vibratoire dans les stratégies de maintenance.
-
-Les modèles ont été orientés vers trois objectifs : détecter tôt sans multiplier les fausses alertes, localiser le défaut, puis estimer sa gravité. Ces objectifs ont guidé nos choix de métriques (taux de défauts manqués, puis taux de fausses alertes, puis F1 macro), mais ils se sont construits progressivement, au fil du projet.
-
-L'absence d'accompagnement de la part d'I-Care a freiné l'acquisition de l'expertise métier. Un échange avec des spécialistes nous aurait peut-être conduits à choisir d'autres objectifs, et par conséquent d'autres métriques d'évaluation.
-
-::: {.callout-tip title="À retenir"}
-Un des moyens de lever ce risque est de désigner un « sponsor » de projet : il garantit l'alignement stratégique avec la direction, l'allocation des ressources et la levée des blocages, et peut ouvrir l'accès aux experts métier.
-:::
-
-## Jeux de données : acquisition et compréhension {#sec-diff-donnees}
-
-### Comprendre le montage d'essai
-
-Le banc CWRU comporte deux roulements montés sur le même arbre, chacun surveillé par un accéléromètre (côté entraînement « DE » et côté ventilateur « FE »). Le défaut d'un roulement est aussi capté, de façon atténuée, par le capteur de l'autre. Il a donc fallu comprendre précisément quel roulement porte le défaut et quel capteur le mesure, avant de pouvoir constituer des jeux de données cohérents.
-
-### Une documentation incomplète
-
-L'acquisition des données a pris du temps, car leur description n'était pas toujours claire : plan d'expérience incomplet pour le roulement côté ventilateur (positions et charges manquantes), fréquence d'échantillonnage et vitesse de rotation parfois différentes entre le site et les fichiers, unité des signaux non précisée.
-
-::: {.callout-tip title="À retenir"}
-Dans un projet en entreprise, il est essentiel d'identifier dès le départ un interlocuteur capable de présenter les données brutes.
-
-Comme pour beaucoup de sujets, une documentation adaptée reste essentielle pour assurer la continuité et la cohérence d'un projet au fil du temps.
-:::
-
-## Compétences techniques et théoriques {#sec-diff-competences}
-
-Plusieurs compétences nécessaires au projet n'étaient pas totalement acquises, ou ne faisaient pas partie de la formation, au moment où nous en avions besoin :
-
-- le traitement du signal (Fourier, enveloppe, filtrage), indispensable dès l'analyse exploratoire
-- les protocoles de validation adaptés à des données groupées (validation croisée par fichier, par charge, validation imbriquée)
-- le Deep Learning (CNN, auto-encodeur), abordé en formation alors que le projet était déjà avancé
-- les outils de travail collaboratif (Git, GitHub) et de rédaction (Quarto), nouveaux pour une partie du groupe
-
-## Pertinence de l'approche et des modèles : tous les objectifs initiaux ne sont pas atteints {#sec-diff-pertinence}
-
-### Une exploration des modèles plutôt séquentielle
-
-Les modèles de Machine Learning ont été testés les uns après les autres.
-
-Leurs hyperparamètres ont bien été optimisés (recherche par grille en validation croisée).
-
-Cependant, dans une démarche d'amélioration continue, il aurait été intéressant d'approfondir, dans une étape suivante, les deux meilleurs modèles pour tenter d'obtenir de meilleurs résultats.
-
-### Sévérité et durée de vie résiduelle
-
-Les résultats sur la sévérité des défauts, et donc sur l'estimation d'une durée de vie résiduelle, restent insuffisants en l'état. Les données CWRU ne comportent qu'un seul roulement par type et taille de défaut, ce qui ne permet pas d'apprendre une relation généralisable entre le signal et la taille du défaut.
-
-Au-delà de la première mission (détecter un roulement défectueux), c'est pourtant un axe important pour l'industrie : il permet de planifier les interventions et de surveiller de près les éléments qui présentent les premiers signes de défaillance. Davantage de temps aurait permis de rechercher d'autres jeux de données, avec des essais de dégradation progressive.
-
-::: {.callout-tip title="À retenir"}
-Dans un projet, l'objectif final n'est pas toujours atteint : il faut savoir capitaliser sur les résultats obtenus et sur les échecs (« lessons learned ») afin de préparer les éventuelles phases suivantes.
-:::
-
-## Organisation et travail en équipe {#sec-diff-equipe}
-
-Le projet a réuni une équipe nouvelle, dont les membres ne se connaissaient pas. La constitution du groupe et la coordination ont demandé du temps.
-
-- Des routines d'échanges ont été mises en place deux fois par semaine, puis ajustées selon les périodes.
-- Le travail a davantage été mené en silos que comme un projet commun : chacun a développé une partie de l'analyse ou des modèles.
-- Il a été difficile de capitaliser les travaux de chacun : codes, choix de données et résultats n'étaient pas toujours harmonisés, ce qui a compliqué la fusion des rapports.
-
-::: {.callout-tip title="À retenir"}
-Le manque de coordination dans une équipe peut rapidement conduire à réaliser deux fois les mêmes tâches, de manières différentes, ce qui représente une perte de temps importante.
-
-La structuration du projet en étapes intermédiaires est donc essentielle à sa réussite.
-:::
-
-## Les tâches les plus chronophages {#sec-diff-chronophages}
-
-| Tâche | Pourquoi elle a pris du temps |
-|---|---|
-| Compréhension globale du sujet | Montage à deux roulements, influence de la vitesse de rotation et de la charge, lecture d'une documentation incomplète |
-| Création des indicateurs spectraux | Notions de traitement du signal à acquérir (Fourier, enveloppe, fréquences caractéristiques) avant de pouvoir les calculer |
-| Définition des plans de test | Éviter la fuite de données entre fenêtres d'un même fichier, choisir des protocoles réalistes (charge non vue, roulement non vu) |
-
-: Tâches les plus chronophages du projet. {#tbl-diff-chronophages}
-
-## Conclusion {#sec-diff-conclusion}
-
-Ce projet nous a permis de mettre en application, sur un cas concret, les connaissances apprises ou en cours d'acquisition durant la formation.
-
-Au-delà de la data science, la plupart des difficultés rencontrées relèvent de la conduite de projet et sont communes à de nombreux projets :
-
-- l'accès aux données et à l'expertise métier
-- l'anticipation des compétences nécessaires
-- la définition d'objectifs réalistes et la capitalisation des résultats
-- la coordination d'une équipe nouvelle
-
-Malgré ces difficultés, l'objectif principal du projet, **détecter un roulement défectueux**, est atteint, et les limites du jeu de données (sévérité, durée de vie résiduelle) sont identifiées et expliquées.
-
-Nous retenons surtout qu'un projet de data science réussit autant par sa préparation (données, interlocuteurs métier, organisation de l'équipe) que par le choix des modèles.
-
-
-
-
-
-
-# Perspectives
-
-## Principe : apprendre le sain, signaler l'écart
-
-Le modèle proposé fonctionne en deux temps :
-
-1. **Détection** par un autoencodeur convolutif, entraîné uniquement sur les signaux sains de la machine surveillée. L'erreur de reconstruction sert de score d'anomalie ; le seuil d'alarme est le percentile 99 des scores des sains d'apprentissage. Dans un environnement bruité, on utilise sa version débruiteuse (DAE), entraînée sur des copies bruitées des signaux sains.
-2. **Diagnostic indicatif**, déclenché seulement après une alarme : une forêt aléatoire sur les 9 indicateurs temporels et spectraux propose une localisation (IR, B ou OR), confirmée par la lecture du spectre d'enveloppe aux fréquences BPFI et BPFO. Sur un roulement nouveau, cette localisation n'est juste qu'entre une fois sur deux et trois fois sur quatre : c'est une piste pour l'expert, pas une décision.
-
-La taille du défaut n'est pas estimée : les données ne le permettent pas.
-
-## Pourquoi un autoencodeur plutôt qu'un seuil sur le RMS
-
-**Sur le roulement d'apprentissage, le RMS suffit.** Avec un seuil fixé sur les sains de 0 à 2 HP, la règle « RMS supérieur au seuil » ne commet aucune erreur à 3 HP, une charge non vue, contre 1 à 2 % de fausses alertes pour l'autoencodeur. Mais elle sépare les défauts de justesse : la fenêtre la plus faible du défaut de bille de 0,014" ne dépasse le seuil que d'environ 5 %. L'énergie dans la bande de résonance (RMS_bande) sépare beaucoup mieux, le défaut le plus faible valant le double du sain, mais le niveau du roulement sain y double presque entre 0 et 3 HP : le même seuil déclenche alors 100 % de fausses alertes à 3 HP. Un seuil sur une amplitude est donc soit peu discriminant, soit sensible aux conditions de fonctionnement. On pourrait ajuster la ligne de base à la charge, comme dans une carte de contrôle de régression, mais il faudrait mesurer la charge en continu. L'autoencodeur, qui travaille sur le signal normalisé, reste à 1 à 2 % de fausses alertes à 3 HP sans connaître la charge.
-
-**Sur un roulement jamais vu, l'autoencodeur se transpose, pas le RMS.** Entraîné uniquement sur les sains du roulement côté entraînement (0 à 2 HP), l'autoencodeur est appliqué tel quel au roulement côté ventilateur. Sur trois apprentissages successifs, il ne manque aucun défaut et sépare parfaitement sains et défauts (AUC = 1). Le taux de fausses alertes à 3 HP varie de 5,5 à 10,5 % selon l'apprentissage (médiane 5,7 %), car le seuil est calculé sur les données d'apprentissage (@tbl-ae-transfert). Dans les mêmes conditions, le seuil sur le RMS déclenche 98 % de fausses alertes : il doit être réappris pour chaque roulement.
-
-::: {#tbl-ae-transfert}
-
-| Essai | DE, 3 HP | FE, toutes charges | FE, 3 HP |
-|---|---:|---:|---:|
-| 1 | 1,1 % | 3,4 % | 5,5 % |
-| 2 | 2,0 % | 6,6 % | 10,5 % |
-| 3 | 1,2 % | 3,9 % | 5,7 % |
-
-Fausses alertes de l'autoencodeur entraîné sur les seuls sains DE (0 à 2 HP), pour trois apprentissages. Dans tous les cas : AUC = 1, aucun défaut manqué.
-=======
 | Couche | Type | Sortie | Paramètres |
 |---|---|---|---:|
 | Entrée | InputLayer | (None, **2048**, 1) | 0 |
@@ -317,7 +125,6 @@ Fausses alertes de l'autoencodeur entraîné sur les seuls sains DE (0 à 2 HP),
 | up_sampling1d_1 | ×2 | (None, **2048**, 32) | 0 |
 | conv1d_5 (sortie) | Conv1D, 1 filtre, noyau 7 | (None, **2048**, 1) | 225 |
 | Total | | | 7 721 |
->>>>>>> main
 
 :::
 
