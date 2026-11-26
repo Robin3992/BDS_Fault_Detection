@@ -14,10 +14,13 @@ format:
     code-fold: true
     embed-resources: true
   pdf:
+    fig-pos: "H"
     toc: true
     number-sections: true
     echo: false
 ---
+
+{{< pagebreak >}}
 
 # La question posée
 Ce rapport fait la synthèse des analyses du projet, présentées en détail dans le rapport d'analyse exploratoire (rapport 1) et le rapport sur les modèles de prédiction (rapport 2). Il propose un modèle final et porte un regard critique sur le travail réalisé.
@@ -52,6 +55,8 @@ Les trois niveaux de validation utilisés dans ce rapport.
 
 Seuls les deux derniers niveaux renseignent sur la capacité d'un modèle à fonctionner sur une machine réelle. Le premier mesure surtout sa capacité à reconnaître des roulements qu'il connaît déjà.
 
+{{< pagebreak >}}
+
 # Les données et leur limite principale
 
 Les données proviennent du banc d'essai du Case Western Reserve University (CWRU) Bearing Data Center. L'analyse porte sur 40 enregistrements échantillonnés à 12 kHz par l'accéléromètre côté entraînement (DE) : le roulement sain et les défauts de bague intérieure (IR), de bille (B) et de bague extérieure à 6 h (OR), de diamètres 0,007", 0,014" et 0,021", chacun mesuré à 4 charges (0 à 3 HP). Les défauts créés sur le roulement côté ventilateur (FE) servent de test externe.
@@ -79,14 +84,12 @@ Trois conséquences pèsent sur toute la suite :
 3. **Un seul roulement sain.** Les taux de fausses alertes sont tous mesurés sur ce roulement, à des charges différentes.
 
 Ce sont des limites du **plan d'expérience**, et non des méthodes. Elles expliquent l'essentiel des résultats qui suivent.
+
 {{< pagebreak >}}
 
 # Tableau comparatif des modèles testés
 
-
-![Tableau comparatif des modèles testés](../images/rapport_3_synthese/comparaison_modeles.png){#fig-ml-p3 width=115% fig-align="center"}
-
-
+![Tableau comparatif des modèles testés](../images/rapport_3_synthese/comparaison_modeles.png){#fig-ml-p3 width=85% fig-align="center"}
 
 
 
@@ -121,7 +124,144 @@ En contrepartie, il demande un entraînement, des réglages (taille des fenêtre
 - **La robustesse en conditions réelles** : bruit industriel, autres capteurs, vitesse variable.
 - **Le réglage du seuil d'alarme** : il dépend de l'apprentissage, et un calibrage sur des signaux sains mis de côté le rendrait plus fiable.
 
-# Analyse autocritique
+{{< pagebreak >}}
+
+# Analyse et difficultés rencontrées durant le projet {#sec-difficultes}
+
+## Le projet data science, découverte d'un nouvel univers {#sec-diff-univers}
+
+### Des principes physiques hors du programme de la formation
+
+Aucun membre du groupe n'avait d'expérience en analyse vibratoire. Exploiter les signaux vibratoires a exigé des notions de traitement du signal non abordées en formation : **transformée de Fourier**, filtrage dans une bande de fréquences, **extraction d'enveloppe** (transformée de Hilbert) et fréquences caractéristiques des roulements (BPFI, BPFO, BSF). Ces notions avaient été abordées lors de notre cursus scolaire, plus ou moins lointain…
+
+### Un type de données inhabituel : des calculs supplémentaires, et un risque associé
+
+Avant toute modélisation, il a fallu construire la table d'apprentissage :
+
+- **découper** chaque enregistrement en fenêtres de courte durée
+- **calculer des indicateurs** sur chaque fenêtre (RMS, kurtosis, indicateurs spectraux…)
+
+Même si l'on trouve des fonctions Python « prêtes à l'emploi », ces notions ont rendu l'analyse exploratoire plus longue et plus complexe : chaque calcul ajouté peut introduire une erreur ou une perte d'information, et donc déformer les données.
+
+::: {.callout-tip title="À retenir"}
+Cette expérience met en évidence que la data science peut s'appliquer à des domaines très variés.
+
+Par ailleurs, il faut veiller à ce que chaque calcul ou transformation de données soit validé par les connaissances métier.
+:::
+
+## Prévisionnel : l'incertitude sur les données du projet {#sec-diff-previsionnel}
+
+Notre objectif initial était de travailler sur des données d'entreprise (I-Care), auxquelles nous n'avons finalement pas eu accès. Le sujet restait proche, mais la nature et le volume de ces données auraient été très différents, et ils conditionnaient directement l'approche du projet.
+
+Cette situation a créé une forte incertitude sur l'organisation du travail :
+
+- des hésitations sur les tâches à réaliser, dues à l'absence de positionnement « métier »
+- un démarrage plus lent, faute de savoir sur quelles données le projet porterait
+
+::: {.callout-tip title="À retenir"}
+Avant de lancer un projet, il faut parfois investir du temps pour s'assurer que les données seront disponibles à temps et avec une qualité suffisante, afin de ne pas engager un projet qui ne pourrait pas aboutir.
+:::
+
+## Les connaissances métier {#sec-diff-metier}
+
+Le groupe disposait de bases en maintenance industrielle, mais ne connaissait pas la place de l'analyse vibratoire dans les stratégies de maintenance.
+
+Les modèles ont été orientés vers trois objectifs : détecter tôt sans multiplier les fausses alertes, localiser le défaut, puis estimer sa gravité. Ces objectifs ont guidé nos choix de métriques (taux de défauts manqués, puis taux de fausses alertes, puis F1 macro), mais ils se sont construits progressivement, au fil du projet.
+
+L'absence d'accompagnement de la part d'I-Care a freiné l'acquisition de l'expertise métier. Un échange avec des spécialistes nous aurait peut-être conduits à choisir d'autres objectifs, et par conséquent d'autres métriques d'évaluation.
+
+::: {.callout-tip title="À retenir"}
+Un des moyens de lever ce risque est de désigner un « sponsor » de projet : il garantit l'alignement stratégique avec la direction, l'allocation des ressources et la levée des blocages, et peut ouvrir l'accès aux experts métier.
+:::
+
+## Jeux de données : acquisition et compréhension {#sec-diff-donnees}
+
+### Comprendre le montage d'essai
+
+Le banc CWRU comporte deux roulements montés sur le même arbre, chacun surveillé par un accéléromètre (côté entraînement « DE » et côté ventilateur « FE »). Le défaut d'un roulement est aussi capté, de façon atténuée, par le capteur de l'autre. Il a donc fallu comprendre précisément quel roulement porte le défaut et quel capteur le mesure, avant de pouvoir constituer des jeux de données cohérents.
+
+### Une documentation incomplète
+
+L'acquisition des données a pris du temps, car leur description n'était pas toujours claire : plan d'expérience incomplet pour le roulement côté ventilateur (positions et charges manquantes), fréquence d'échantillonnage et vitesse de rotation parfois différentes entre le site et les fichiers, unité des signaux non précisée.
+
+::: {.callout-tip title="À retenir"}
+Dans un projet en entreprise, il est essentiel d'identifier dès le départ un interlocuteur capable de présenter les données brutes.
+
+Comme pour beaucoup de sujets, une documentation adaptée reste essentielle pour assurer la continuité et la cohérence d'un projet au fil du temps.
+:::
+
+## Compétences techniques et théoriques {#sec-diff-competences}
+
+Plusieurs compétences nécessaires au projet n'étaient pas totalement acquises, ou ne faisaient pas partie de la formation, au moment où nous en avions besoin :
+
+- le traitement du signal (Fourier, enveloppe, filtrage), indispensable dès l'analyse exploratoire
+- les protocoles de validation adaptés à des données groupées (validation croisée par fichier, par charge, validation imbriquée)
+- le Deep Learning (CNN, auto-encodeur), abordé en formation alors que le projet était déjà avancé
+- les outils de travail collaboratif (Git, GitHub) et de rédaction (Quarto), nouveaux pour une partie du groupe
+
+## Pertinence de l'approche et des modèles : tous les objectifs initiaux ne sont pas atteints {#sec-diff-pertinence}
+
+### Une exploration des modèles plutôt séquentielle
+
+Les modèles de Machine Learning ont été testés les uns après les autres.
+
+Leurs hyperparamètres ont bien été optimisés (recherche par grille en validation croisée).
+
+Cependant, dans une démarche d'amélioration continue, il aurait été intéressant d'approfondir, dans une étape suivante, les deux meilleurs modèles pour tenter d'obtenir de meilleurs résultats.
+
+### Sévérité et durée de vie résiduelle
+
+Les résultats sur la sévérité des défauts, et donc sur l'estimation d'une durée de vie résiduelle, restent insuffisants en l'état. Les données CWRU ne comportent qu'un seul roulement par type et taille de défaut, ce qui ne permet pas d'apprendre une relation généralisable entre le signal et la taille du défaut.
+
+Au-delà de la première mission (détecter un roulement défectueux), c'est pourtant un axe important pour l'industrie : il permet de planifier les interventions et de surveiller de près les éléments qui présentent les premiers signes de défaillance. Davantage de temps aurait permis de rechercher d'autres jeux de données, avec des essais de dégradation progressive.
+
+::: {.callout-tip title="À retenir"}
+Dans un projet, l'objectif final n'est pas toujours atteint : il faut savoir capitaliser sur les résultats obtenus et sur les échecs (« lessons learned ») afin de préparer les éventuelles phases suivantes.
+:::
+
+## Organisation et travail en équipe {#sec-diff-equipe}
+
+Le projet a réuni une équipe nouvelle, dont les membres ne se connaissaient pas. La constitution du groupe et la coordination ont demandé du temps.
+
+- Des routines d'échanges ont été mises en place deux fois par semaine, puis ajustées selon les périodes.
+- Le travail a davantage été mené en silos que comme un projet commun : chacun a développé une partie de l'analyse ou des modèles.
+- Il a été difficile de capitaliser les travaux de chacun : codes, choix de données et résultats n'étaient pas toujours harmonisés, ce qui a compliqué la fusion des rapports.
+
+::: {.callout-tip title="À retenir"}
+Le manque de coordination dans une équipe peut rapidement conduire à réaliser deux fois les mêmes tâches, de manières différentes, ce qui représente une perte de temps importante.
+
+La structuration du projet en étapes intermédiaires est donc essentielle à sa réussite.
+:::
+
+## Les tâches les plus chronophages {#sec-diff-chronophages}
+
+| Tâche | Pourquoi elle a pris du temps |
+|---|---|
+| Compréhension globale du sujet | Montage à deux roulements, influence de la vitesse de rotation et de la charge, lecture d'une documentation incomplète |
+| Création des indicateurs spectraux | Notions de traitement du signal à acquérir (Fourier, enveloppe, fréquences caractéristiques) avant de pouvoir les calculer |
+| Définition des plans de test | Éviter la fuite de données entre fenêtres d'un même fichier, choisir des protocoles réalistes (charge non vue, roulement non vu) |
+
+: Tâches les plus chronophages du projet. {#tbl-diff-chronophages}
+
+## Conclusion {#sec-diff-conclusion}
+
+Ce projet nous a permis de mettre en application, sur un cas concret, les connaissances apprises ou en cours d'acquisition durant la formation.
+
+Au-delà de la data science, la plupart des difficultés rencontrées relèvent de la conduite de projet et sont communes à de nombreux projets :
+
+- l'accès aux données et à l'expertise métier
+- l'anticipation des compétences nécessaires
+- la définition d'objectifs réalistes et la capitalisation des résultats
+- la coordination d'une équipe nouvelle
+
+Malgré ces difficultés, l'objectif principal du projet, **détecter un roulement défectueux**, est atteint, et les limites du jeu de données (sévérité, durée de vie résiduelle) sont identifiées et expliquées.
+
+Nous retenons surtout qu'un projet de data science réussit autant par sa préparation (données, interlocuteurs métier, organisation de l'équipe) que par le choix des modèles.
+
+
+
+
+
 
 # Perspectives
 
