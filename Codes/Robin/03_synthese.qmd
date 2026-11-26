@@ -66,8 +66,6 @@ Ce changement de taille de fenêtre a des conséquences sur deux points : l'arch
 
 Le seuil est toujours fixé au pourcentile 99 sur les données train, ce qui laisse théoriquement 1 % de faux positifs.
 Appliqué sur les données de test, on constate que le taux de fausses alarmes est désormais de 1,06 %, ce qui se rapproche de notre seuil théorique de 1 %.  
-  
-L'ensemble des résultats est donc différent de ceux présentés dans le rapport de modélisation, mais restent dans les mêmes ordres de grandeur, et permettent de tirer les mêmes conclusions.
 
 2.2.6 Résultats test de robustesse à la charge
 
@@ -90,7 +88,8 @@ L'ensemble des résultats est donc différent de ceux présentés dans le rappor
 Comparaison AE vs DAE (data augmentation par bruitage SNR 15→0 dB), évalués par roulement.
 
 :::
-
+ 
+L'ensemble des résultats est donc différent de ceux présentés dans le rapport de modélisation, mais restent dans les mêmes ordres de grandeur, et permettent de tirer les mêmes conclusions.
   
 {{< pagebreak >}}
 
