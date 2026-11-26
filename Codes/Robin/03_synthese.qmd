@@ -1,0 +1,177 @@
+---
+title: "Détection et diagnostic des défauts de roulement"
+subtitle: "Synthèse, modèle proposé et regard critique — jeu de données CWRU"
+author:
+  - Blaise Boutolleau
+  - Mourad Mellal
+  - Robin Grivet
+date: today
+lang: fr
+format:
+  html:
+    toc: true
+    number-sections: true
+    code-fold: true
+    embed-resources: true
+  pdf:
+    toc: true
+    number-sections: true
+    echo: false
+---
+
+# Ajustements Auto-Encodeur : 
+
+Nous nous sommes aperçus de plusieurs approximations dans la partie Auto-Encodeur du rapport de modélisation, que nous voulons clarifier :
+
+## La taille des fenêtres
+
+La taille des fenêtres avait été réduite dans le cadre des développements car cela permettait :
+
+- d'augmenter le nombre de fenêtre (durée signal/durée fenêtre = nombre de fenêtre)  
+- de réduire le temps d'entraînement par fenêtre sans perte d'information (en gardant quelques tours d'arbre moteur)  
+
+Cette configuration n'était cependant pas adaptée pour être comparable aux analyses précédentes.
+Des corrections ont donc été apportées dans les notebooks en ce sens.
+
+**Impacts**
+
+Ce changement de taille de fenêtre a des conséquences sur deux points : l'architecture du modèle et les performances obtenues.
+
+2.2.4 Le modèle Conv1D-AE
+
+::: {#tbl-ae-architecture}
+
+| Couche | Type | Sortie | Paramètres |
+|---|---|---|---:|
+| Entrée | InputLayer | (None, **2048**, 1) | 0 |
+| conv1d | Conv1D, 32 filtres, noyau 7 | (None, **2048**, 32) | 256 |
+| max_pooling1d | ÷2 | (None, **1024**, 32) | 0 |
+| conv1d_1 | Conv1D, 16 filtres, noyau 5 | (None, **1024**, 16) | 2 576 |
+| max_pooling1d_1 | ÷2 | (None, **512**, 16) | 0 |
+| conv1d_2 | Conv1D, 8 filtres, noyau 3 — **bottleneck** | (None, **512**, 8) | 392 |
+| conv1d_3 | Conv1D, 16 filtres, noyau 5 | (None, **512**, 16) | 656 |
+| up_sampling1d | ×2 | (None, **1024**, 16) | 0 |
+| conv1d_4 | Conv1D, 32 filtres, noyau 7 | (None, **1024**, 32) | 3 616 |
+| up_sampling1d_1 | ×2 | (None, **2048**, 32) | 0 |
+| conv1d_5 (sortie) | Conv1D, 1 filtre, noyau 7 | (None, **2048**, 1) | 225 |
+| Total | | | 7 721 |
+
+:::
+
+2.2.5 Résultats (AE)
+
+| AUC | FPR (fausses alarmes) | FNR (défauts manqués) |
+|----:|----------------------:|----------------------:|
+| 1,000 | **1,06 %**  (contre 6,45 % avant correction) | 0,00 % |
+
+Le seuil est toujours fixé au pourcentile 99 sur les données train, ce qui laisse théoriquement 1 % de faux positifs.
+Appliqué sur les données de test, on constate que le taux de fausses alarmes est désormais de 1,06 %, ce qui se rapproche de notre seuil théorique de 1 %.  
+
+2.2.6 Résultats test de robustesse à la charge
+
+| Signal | seuil (p99) | AUC | FPR | FNR |
+|---|---:|---:|---:|---:|
+| Normalisé | 0,0370 | 1,0 | 2,75 % | 0,0 % |
+| Brut | 0,0013 | 1,0 | 99,79 % | 0,0 % |
+
+2.2.7 Apprentissage augmenté
+
+::: {#tbl-ae-vs-dae}
+
+| Config | Roulement | Seuil p99 | AUC | FPR | FNR |
+|---|---|---:|---:|---:|---:|
+| AE (Sains DE,FE) | DE | 0,0411 | 1,000 | 0,63 % | 0 % |
+| AE (Sains DE,FE) | FE | 0,0411 | 1,000 | 0,85 % | 0 % |
+| DAE (Sains DE,FE + Bruit) | DE | 0,0173 | 1,000 | 0,21 % | 0 % |
+| DAE (Sains DE,FE + Bruit) | FE | 0,0173 | 1,000 | 1,90 % | 0 % |
+
+Comparaison AE vs DAE (data augmentation par bruitage SNR 15→0 dB), évalués par roulement.
+
+:::
+ 
+L'ensemble des résultats est donc différent de ceux présentés dans le rapport de modélisation, mais restent dans les mêmes ordres de grandeur, et permettent de tirer les mêmes conclusions.
+  
+{{< pagebreak >}}
+
+
+## Limites des protocoles d'évaluations  
+
+
+L'auto-encodeur a été entraîné avec les données saines des **2 roulements** (avec un split par fichier pour éviter les fuites de données), puis chaque roulement a été testé séparément.  
+Dans cette configuration, les données saines du test proviennent du même banc que l'entraînement, ce qui implique un protocole d'évaluation limité car :
+
+1. les fenêtres saines du test partagent la **même signature de montage** que l'entraînement : même roulement, même capteur, même fixation, même bruit de fond du banc.  
+Le modèle peut donc reconnaître "ce banc précis" plutôt que d'identifier "un roulement sain" de façon générale.  
+Les métriques (AUC = 1,000, FPR faible) sont alors **optimistes** et ne disent rien de la capacité du modèle à se généraliser.
+
+2. les données sont **fortement corrélées** : mêmes campagnes de mesure, même environnement, et seule la charge varie entre les fichiers. La variabilité réelle d'un déploiement industriel est beaucoup plus grande : roulement différent (usure, fabrication), capteur et montage différents, machine et environnement différent.. Toutes ces conditions ne sont pas testées.
+
+3. en production, le roulement et le capteur seront probablement **inconnus** du modèle. Un protocole qui ne teste que dans les conditions d'entraînement ne mesure donc pas l'adaptabilité du modèle, seulement la détection sur un banc connu, d'où la mise en place du protocole inter-roulement présenté ensuite.
+
+## Protocole d'évaluation supplémentaire
+
+Nous reprenons un protocole d'évaluation précédemment utilisé, où le modèle sera entraîné sur un capteur, puis les tests réalisés sur le second.
+
+::: {#tbl-protocole-train-de-test-fe}
+
+| Classe | Roulement | Train | Test |
+|---|---|---:|---:|
+| Sain | DE | 1 653 | 0 |
+| Défaut | DE | 0 | 0 |
+| Sain | FE | 0 | 1 653 |
+| Défaut | FE | 0 | 5 264 |
+
+Nombre de fenêtres du protocole d'évaluation inter-roulement : entraînement sur les fenêtres saines **DE** et test sur **FE**
+
+:::
+
+Le protocole inverse a également été réalisé, pour généraliser davantage : entraînement sur les fenêtres saines **FE** et test sur **DE**
+
+**Résultats :**  
+
+Pour faciliter la lecture, les comparaisons seront mesurées uniquement avec le modèle DAE :
+
+::: {#tbl-dae-inter-roulement}
+
+| Modèle | Train | Test | Seuil p99 | AUC | FPR | FNR |
+|---|---|---|---:|---:|---:|---:|
+| DAE | sains **DE** | **FE** | 0,0155 | 1,000 | 27,65 % | 0 % |
+| DAE | sains **FE** | **DE** | 0,0216 | 1,000 | 0,91 % | 0 % |
+
+Comparaison DAE inter-roulement.
+
+:::
+
+La capacité des modèles à séparer sains et défauts reste parfaite : **AUC = 1,000** dans les deux sens.  
+Toujours aucun défauts manqué : **FNR = 0 %** dans les deux sens.  
+En revanche, on voit une nette différence sur les faux positifs :
+
+- DE -> FE : FPR **27,65 %**   
+- FE -> DE : FPR **0,91 %**  
+
+Il faudra pousser l'analyse pour comprendre l'origine de ce comportement, mais nous pouvons formuler l'hypothèse suivante :
+
+Lorsqu'on analyse les seuils, ils sont plus bas dans le protocole _train DE -> test FE_.
+La cause pourrait être que **le signal sain FE est plus "complexe" que DE**, ce qui expliquerait que :  
+
+- En configuration _train FE -> test DE_, FE étant plus complexe, le seuil fixé sur le train est plus haut, puisque le signal est plus dispersé (seuil DAE 0,0216).  
+**Conséquence** : Lors du test sur DE, son signal étant plus simple, le modèle reconstruit sans difficultés, d'autant plus que le seuil est plus haut, donc moins de fausses alarmes.
+
+- En configuration _train DE -> test FE_, DE étant plus simple, le seuil fixé sur le train est plus bas, puisque le signal est moins dispersé (seuil DAE 0,0155).  
+**Conséquence** : Lors du test sur FE, son signal étant plus complexe, le modèle a plus de difficulté à reconstruire un signal complexe, la MSE va augmenter, et le seuil à l'entraînement  ayant été fixé plus bas, il sera plus rapidement dépassé.
+
+
+**Conclusions :**
+
+La détection se transfère parfaitement d'un roulement à l'autre : **AUC = 1,000 et FNR = 0 %** dans les deux sens de transfert (train DE -> test FE et train FE -> test DE).  
+Le modèle a donc appris une représentation du signal sain suffisamment générale pour détecter un défaut sur un roulement qu'il n'a jamais vu.  
+  
+En revanche, le **taux de faux positifs dépend fortement du sens de transfert** (FPR DAE : 27,65 % en train DE -> test FE, contre 0,91 % en train FE -> test DE).  
+
+Deux mécanismes s'additionnent :  
+
+1. Calibration du seuil : le seuil p99 est calculé sur les seuls signaux sains du roulement d'entraînement. Le signal sain FE étant plus dispersé, son seuil est plus haut (0,0216) ; le signal sain DE, plus resserré, donne un seuil plus bas (0,0155).  
+
+2. Généralisation du profil sain : un modèle entraîné sur DE n'a jamais vu le contenu spectral propre au FE (bruit du ventilateur, passage des pales). Au test sur FE, la MSE de reconstruction du signal sain augmente donc, et elle dépasse d'autant plus vite un seuil resté bas.  
+
+Autrement dit, la généralisation inter-roulement porte sur la détection des défauts, mais la frontière « sain » reste celle du roulement d'entraînement : le seuil et le profil de signal sain appris ne se transposent pas tels quels à un autre roulement.

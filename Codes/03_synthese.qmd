@@ -87,22 +87,35 @@ Ce sont des limites du **plan d'expérience**, et non des méthodes. Elles expli
 
 {{< pagebreak >}}
 
-# Tableau comparatif des modèles testés
 
+<<<<<<< HEAD
 ![Tableau comparatif des modèles testés](../images/rapport_3_synthese/comparaison_modeles.png){#fig-ml-p3 width=85% fig-align="center"}
+=======
 
+# Compléments du rapport de modélisation (Auto-Encodeur)
 
+Nous nous sommes aperçus de plusieurs approximations dans la partie Auto-Encodeur du rapport de modélisation, que nous voulons clarifier :
 
-# Le modèle proposé
+## La taille des fenêtres
+>>>>>>> main
 
-## Principe : apprendre le sain, signaler l'écart
+La taille des fenêtres avait été réduite dans le cadre des développements car cela permettait :
 
-Le modèle proposé est un **autoencodeur convolutif**. Il se compose d'un encodeur, qui compresse une fenêtre de signal en un résumé réduit, et d'un décodeur, qui reconstruit la fenêtre à partir de ce résumé. Il est entraîné uniquement sur des signaux sains : il apprend à quoi ressemble un roulement sain. Un signal défectueux, avec des chocs qu'il n'a jamais vus, est mal reconstruit. L'erreur de reconstruction sert donc de score d'anomalie, et une alarme est déclenchée lorsqu'elle dépasse un seuil fixé sur les signaux sains.
+- d'augmenter le nombre de fenêtre (durée signal/durée fenêtre = nombre de fenêtre)  
+- de réduire le temps d'entraînement par fenêtre sans perte d'information (en gardant quelques tours d'arbre moteur)  
 
-## Ses avantages
+Cette configuration n'était cependant pas adaptée pour être comparable aux analyses précédentes.
+Des corrections ont donc été apportées dans les notebooks en ce sens.
 
-**Il n'a besoin que de données saines.** L'apprentissage est non supervisé : aucun exemple de défaut n'est nécessaire, alors que les défauts sont rares et coûteux à obtenir en usine. Il suffit d'enregistrer le signal de la machine après la pose d'un roulement neuf.
+**Impacts**
 
+Ce changement de taille de fenêtre a des conséquences sur deux points : l'architecture du modèle et les performances obtenues.
+
+2.2.4 Le modèle Conv1D-AE
+
+::: {#tbl-ae-architecture}
+
+<<<<<<< HEAD
 **Il détecte la forme du signal, pas son niveau.** Chaque fenêtre est normalisée avant d'entrer dans le modèle. L'amplitude du signal, qui varie notamment avec la charge, n'est donc pas interprétée comme un défaut : le modèle réagit aux chocs, et non aux changements de conditions de fonctionnement.
 
 **Il est adapté à la nature du signal.** Les convolutions détectent des motifs locaux et répétés, comme les chocs successifs d'un défaut, quelle que soit leur position dans la fenêtre, avec peu de paramètres.
@@ -289,27 +302,379 @@ La taille du défaut n'est pas estimée : les données ne le permettent pas.
 | 3 | 1,2 % | 3,9 % | 5,7 % |
 
 Fausses alertes de l'autoencodeur entraîné sur les seuls sains DE (0 à 2 HP), pour trois apprentissages. Dans tous les cas : AUC = 1, aucun défaut manqué.
+=======
+| Couche | Type | Sortie | Paramètres |
+|---|---|---|---:|
+| Entrée | InputLayer | (None, **2048**, 1) | 0 |
+| conv1d | Conv1D, 32 filtres, noyau 7 | (None, **2048**, 32) | 256 |
+| max_pooling1d | ÷2 | (None, **1024**, 32) | 0 |
+| conv1d_1 | Conv1D, 16 filtres, noyau 5 | (None, **1024**, 16) | 2 576 |
+| max_pooling1d_1 | ÷2 | (None, **512**, 16) | 0 |
+| conv1d_2 | Conv1D, 8 filtres, noyau 3 — **bottleneck** | (None, **512**, 8) | 392 |
+| conv1d_3 | Conv1D, 16 filtres, noyau 5 | (None, **512**, 16) | 656 |
+| up_sampling1d | ×2 | (None, **1024**, 16) | 0 |
+| conv1d_4 | Conv1D, 32 filtres, noyau 7 | (None, **1024**, 32) | 3 616 |
+| up_sampling1d_1 | ×2 | (None, **2048**, 32) | 0 |
+| conv1d_5 (sortie) | Conv1D, 1 filtre, noyau 7 | (None, **2048**, 1) | 225 |
+| Total | | | 7 721 |
+>>>>>>> main
 
 :::
 
-Ces deux résultats tiennent à trois propriétés de l'autoencodeur :
+2.2.5 Résultats (AE)
 
-- **Il apprend la forme complète du signal sain**, alors que le RMS le résume en un seul nombre. Un changement de forme sans hausse d'énergie (chocs faibles, apparition d'une fréquence) reste en principe détectable.
-- **Il est robuste aux variations d'amplitude** : sur signal normalisé, il est insensible à la charge et au gain du capteur ; dans sa version débruiteuse, il tolère le bruit ambiant.
-- **Il s'étend sans redéfinir d'indicateurs** à plusieurs capteurs, à de nouvelles conditions de fonctionnement ou à un autre roulement.
+| AUC | FPR (fausses alarmes) | FNR (défauts manqués) |
+|----:|----------------------:|----------------------:|
+| 1,000 | **1,06 %**  (contre 6,45 % avant correction) | 0,00 % |
 
-Comme une carte de contrôle, et contrairement aux classifieurs supervisés, il n'a besoin que de données saines, faciles à enregistrer après la pose d'un roulement neuf. En contrepartie, il demande un entraînement, des réglages et une maintenance, et sa décision est moins facile à expliquer.
+Le seuil est toujours fixé au pourcentile 99 sur les données train, ce qui laisse théoriquement 1 % de faux positifs.
+Appliqué sur les données de test, on constate que le taux de fausses alarmes est désormais de 1,06 %, ce qui se rapproche de notre seuil théorique de 1 %.  
 
-## Le RMS comme garde-fou
+2.2.6 Résultats test de robustesse à la charge
 
-Une carte de contrôle du RMS, à ligne de base propre à chaque roulement, est conservée en parallèle. Le RMS est retenu plutôt que RMS_bande, trop sensible à la charge. Simple et explicable, cette carte sert de contrôle de cohérence : une alarme de l'autoencodeur sans hausse d'énergie signale un changement de forme du signal à examiner ; une hausse d'énergie sans alarme de l'autoencodeur signale un modèle à revoir.
+| Signal | seuil (p99) | AUC | FPR | FNR |
+|---|---:|---:|---:|---:|
+| Normalisé | 0,0370 | 1,0 | 2,75 % | 0,0 % |
+| Brut | 0,0013 | 1,0 | 99,79 % | 0,0 % |
 
-## Ce qu'il reste à démontrer
+2.2.7 Apprentissage augmenté
 
-Les données CWRU établissent deux avantages de l'autoencodeur : sa robustesse à une charge non vue sans avoir à la mesurer, et sa transposition à un autre roulement sans nouvelle ligne de base. D'autres points restent à vérifier :
+::: {#tbl-ae-vs-dae}
 
-- **la détection précoce** : sur un défaut naissant, l'autoencodeur donne-t-il l'alarme avant le RMS ? Les défauts du CWRU étant francs et énergétiques, le test décisif porte sur des données de dégradation progressive : lequel des détecteurs alerte le premier, sans fausse alerte auparavant ?
-- **la transposition à une autre machine** : le roulement côté ventilateur est un autre roulement, mais sur le même moteur et dans les mêmes enregistrements ;
-- **la robustesse en conditions réelles** : bruit industriel, autres capteurs ;
-- **la stabilité du seuil d'alarme** : calculé sur les données d'apprentissage, il varie d'un apprentissage à l'autre ; une calibration sur des sains mis de côté le rendrait plus stable et moins optimiste ;
-- **la comparaison avec une carte de contrôle ajustée sur la charge**, qui pourrait égaler l'autoencodeur lorsque la charge est mesurée.
+| Config | Roulement | Seuil p99 | AUC | FPR | FNR |
+|---|---|---:|---:|---:|---:|
+| AE (Sains DE,FE) | DE | 0,0411 | 1,000 | 0,63 % | 0 % |
+| AE (Sains DE,FE) | FE | 0,0411 | 1,000 | 0,85 % | 0 % |
+| DAE (Sains DE,FE + Bruit) | DE | 0,0173 | 1,000 | 0,21 % | 0 % |
+| DAE (Sains DE,FE + Bruit) | FE | 0,0173 | 1,000 | 1,90 % | 0 % |
+
+Comparaison AE vs DAE (data augmentation par bruitage SNR 15→0 dB), évalués par roulement.
+
+:::
+
+
+L'ensemble des résultats est donc différent de ceux présentés dans le rapport de modélisation, mais restent dans les mêmes ordres de grandeur, et permettent de tirer les mêmes conclusions.
+
+  
+{{< pagebreak >}}
+
+
+## Limites des protocoles d'évaluations  
+
+
+L'auto-encodeur a été entraîné avec les données saines des **2 roulements** (avec un split par fichier pour éviter les fuites de données), puis chaque roulement a été testé séparément.  
+Dans cette configuration, les données saines du test proviennent du même banc que l'entraînement, ce qui implique un protocole d'évaluation limité car :
+
+1. les fenêtres saines du test partagent la **même signature de montage** que l'entraînement : même roulement, même capteur, même fixation, même bruit de fond du banc.  
+Le modèle peut donc reconnaître "ce banc précis" plutôt que d'identifier "un roulement sain" de façon générale.  
+Les métriques (AUC = 1,000, FPR faible) sont alors **optimistes** et ne disent rien de la capacité du modèle à se généraliser.
+
+2. les données sont **fortement corrélées** : mêmes campagnes de mesure, même environnement, et seule la charge varie entre les fichiers. La variabilité réelle d'un déploiement industriel est beaucoup plus grande : roulement différent (usure, fabrication), capteur et montage différents, machine et environnement différent.. Toutes ces conditions ne sont pas testées.
+
+3. en production, le roulement et le capteur seront probablement **inconnus** du modèle. Un protocole qui ne teste que dans les conditions d'entraînement ne mesure donc pas l'adaptabilité du modèle, seulement la détection sur un banc connu, d'où la mise en place du protocole inter-roulement présenté ensuite.
+
+## Protocole d'évaluation supplémentaire
+
+Nous reprenons un protocole d'évaluation précédemment utilisé, où le modèle sera entraîné sur un capteur, puis les tests réalisés sur le second.
+
+::: {#tbl-protocole-train-de-test-fe}
+
+| Classe | Roulement | Train | Test |
+|---|---|---:|---:|
+| Sain | DE | 1 653 | 0 |
+| Défaut | DE | 0 | 0 |
+| Sain | FE | 0 | 1 653 |
+| Défaut | FE | 0 | 5 264 |
+
+Nombre de fenêtres du protocole d'évaluation inter-roulement : entraînement sur les fenêtres saines **DE** et test sur **FE**
+
+:::
+
+Le protocole inverse a également été réalisé, pour généraliser davantage : entraînement sur les fenêtres saines **FE** et test sur **DE**
+
+**Résultats :**  
+
+Pour faciliter la lecture, les comparaisons seront mesurées uniquement avec le modèle DAE :
+
+::: {#tbl-dae-inter-roulement}
+
+| Modèle | Train | Test | Seuil p99 | AUC | FPR | FNR |
+|---|---|---|---:|---:|---:|---:|
+| DAE | sains **DE** | **FE** | 0,0155 | 1,000 | 27,65 % | 0 % |
+| DAE | sains **FE** | **DE** | 0,0216 | 1,000 | 0,91 % | 0 % |
+
+Comparaison DAE inter-roulement.
+
+:::
+
+La capacité des modèles à séparer sains et défauts reste parfaite :   
+**AUC = 1,000** dans les deux sens.  
+Toujours aucun défauts manqué : **FNR = 0 %** dans les deux sens.  
+En revanche, on voit une nette différence sur les faux positifs :
+
+- DE -> FE : FPR **27,65 %**   
+- FE -> DE : FPR **0,91 %**  
+
+Il faudra pousser l'analyse pour comprendre l'origine de ce comportement, mais nous pouvons formuler l'hypothèse suivante :
+
+Lorsqu'on analyse les seuils, ils sont plus bas dans le protocole _train DE -> test FE_.
+La cause pourrait être que **le signal sain FE est plus "complexe" que DE**, ce qui expliquerait que :  
+
+- En configuration _train FE -> test DE_, FE étant plus complexe, le seuil fixé sur le train est plus haut, puisque le signal est plus dispersé (seuil DAE 0,0216).  
+**Conséquence** : Lors du test sur DE, son signal étant plus simple, le modèle reconstruit sans difficultés, d'autant plus que le seuil est plus haut, donc moins de fausses alarmes.
+
+- En configuration _train DE -> test FE_, DE étant plus simple, le seuil fixé sur le train est plus bas, puisque le signal est moins dispersé (seuil DAE 0,0155).  
+**Conséquence** : Lors du test sur FE, son signal étant plus complexe, le modèle a plus de difficulté à reconstruire un signal complexe, la MSE va augmenter, et le seuil à l'entraînement  ayant été fixé plus bas, il sera plus rapidement dépassé.
+
+
+**Conclusions :**
+
+La détection se transfère parfaitement d'un roulement à l'autre : **AUC = 1,000 et FNR = 0 %** dans les deux sens de transfert (train DE -> test FE et train FE -> test DE).  
+Le modèle a donc appris une représentation du signal sain suffisamment générale pour détecter un défaut sur un roulement qu'il n'a jamais vu.  
+  
+En revanche, le **taux de faux positifs dépend fortement du sens de transfert** (FPR DAE : 27,65 % en train DE -> test FE, contre 0,91 % en train FE -> test DE).  
+
+Deux mécanismes s'additionnent :  
+
+1. Calibration du seuil : le seuil p99 est calculé sur les seuls signaux sains du roulement d'entraînement. Le signal sain FE étant plus dispersé, son seuil est plus haut (0,0216) ; le signal sain DE, plus resserré, donne un seuil plus bas (0,0155).  
+
+2. Généralisation du profil sain : un modèle entraîné sur DE n'a jamais vu le contenu spectral propre au FE (bruit du ventilateur, passage des pales). Au test sur FE, la MSE de reconstruction du signal sain augmente donc, et elle dépasse d'autant plus vite un seuil resté bas.  
+
+Autrement dit, la généralisation inter-roulement porte sur la détection des défauts, mais la frontière « sain » reste celle du roulement d'entraînement : le seuil et le profil de signal sain appris ne se transposent pas tels quels à un autre roulement.
+
+{{< pagebreak >}}
+
+
+# Tableau comparatif des modèles testés
+
+![Tableau comparatif des modèles testés](../images/rapport_3_synthese/comparaison_modeles.png){#fig-ml-p3 width=85% fig-align="center"}
+
+
+
+# Le modèle proposé : la forêt aléatoire
+
+## Principe
+
+Le modèle proposé est la forêt aléatoire retenue dans le rapport 2. Elle prédit, pour chaque fenêtre de 0,2 s, l'état du roulement parmi quatre classes : sain, défaut de bague intérieure (IR), de bille (B) ou de bague extérieure (OR). Elle répond donc en une seule fois aux deux premières questions : détecter un défaut et le localiser.
+
+Elle utilise les 9 indicateurs calculés sur chaque fenêtre : quatre indicateurs temporels (RMS, pic, facteur de crête, kurtosis) et cinq indicateurs spectraux (RMS_bande et l'amplitude de l'enveloppe aux fréquences BPFI, BPFO, BSF et FTF). Ses hyperparamètres ont été choisis par validation croisée imbriquée, en laissant de côté une charge à chaque pli.
+
+## Pourquoi la forêt aléatoire
+
+- **Elle est la meilleure sur les critères industriels.** Parmi les cinq familles de modèles comparées, elle est la seule à n'avoir ni défaut manqué ni fausse alerte, que l'on teste un enregistrement ou une charge non vus.
+- **Elle s'appuie sur des indicateurs physiques.** Les indicateurs d'enveloppe sont liés aux fréquences de passage des billes sur le défaut : ils rendent le modèle moins dépendant du niveau d'énergie. Avec eux, les fausses alertes sur le second roulement sont divisées par deux.
+- **Elle est interprétable.** L'importance de chaque indicateur se lit directement, et chaque indicateur a un sens pour un expert en vibrations.
+- **Elle est simple à mettre en œuvre.** Elle ne demande ni mise à l'échelle des variables ni calcul lourd, et se réentraîne en quelques secondes.
+
+## Ses limites
+
+- **Elle a besoin d'exemples de défauts étiquetés**, rares et coûteux à obtenir en usine.
+- **Sa localisation se dégrade sur un roulement nouveau.** Sur le roulement côté ventilateur, la plupart des défauts de bague intérieure sont classés comme défauts de bille. La localisation reste une piste pour l'expert, à confirmer par le spectre d'enveloppe.
+- **Ses seuils sont propres au banc d'essai.** Appliquée au roulement côté ventilateur, plus énergétique, elle déclenche environ 11 % de fausses alertes.
+- **Elle n'estime pas la taille du défaut** : les données ne le permettent pas.
+
+# Le modèle proposé face à des détecteurs plus simples
+
+La forêt aléatoire demande des défauts étiquetés et une quarantaine de modèles comparés pour être choisie. Pour la seule détection, fait-elle mieux que deux alternatives plus simples ?
+
+- **un seuil sur le RMS**, fixé sur les fenêtres saines : c'est la référence métier, à la manière d'une carte de contrôle ;
+- **un autoencodeur**, entraîné uniquement sur des signaux sains, qui apprend la forme du signal sain et signale ce qu'il reconstruit mal.
+
+Ces deux détecteurs n'ont besoin d'aucun exemple de défaut. Les seuils sont fixés au percentile 99 des fenêtres saines d'apprentissage. Deux situations sont testées : une charge jamais vue (3 HP) et un roulement jamais vu (côté ventilateur).
+
+## Autoencodeur et seuil sur le RMS
+
+Sur le roulement d'apprentissage, les deux détecteurs ne manquent aucun défaut à une charge non vue. Le seuil sur le RMS ne commet aucune fausse alerte, mais de justesse : la fenêtre la plus faible du défaut de bille de 0,014" ne dépasse le seuil que d'environ 5 %. L'énergie dans la bande de résonance (RMS_bande) sépare mieux, mais le niveau du roulement sain y double presque entre 0 et 3 HP : le seuil déclenche alors 100 % de fausses alertes. L'autoencodeur, qui travaille sur le signal normalisé, reste à 1 à 2 % de fausses alertes sans connaître la charge.
+
+Sur un roulement jamais vu, l'écart est net. Entraîné sur les seuls sains du roulement côté entraînement, l'autoencodeur sépare parfaitement sains et défauts du roulement côté ventilateur (AUC = 1 sur trois apprentissages), sans défaut manqué, avec 5,5 à 10,5 % de fausses alertes à 3 HP selon l'apprentissage. Le seuil sur le RMS, appris dans les mêmes conditions, déclenche 98 % de fausses alertes : il doit être réappris pour chaque roulement.
+
+## Forêt aléatoire et seuil sur le RMS
+
+Sur le roulement d'apprentissage, la forêt aléatoire et le seuil sur le RMS font tous deux un sans-faute à une charge non vue. La forêt n'apporte donc rien pour la détection, mais elle localise le défaut, ce que le RMS ne sait pas faire.
+
+Sur le roulement côté ventilateur, avec un apprentissage sur toutes les charges du roulement côté entraînement, la forêt aléatoire manque 1 fenêtre défectueuse sur 1 500 et déclenche 10,9 % de fausses alertes. Avec les mêmes fenêtres saines d'apprentissage, le seuil sur le RMS ne manque aucun défaut mais déclenche 48 % de fausses alertes, et le seuil sur RMS_bande 29 %. Le roulement sain côté ventilateur est plus énergétique, si bien que sur ce roulement, le sain le plus fort dépasse même le défaut le plus faible : aucun seuil sur le RMS ne peut les séparer parfaitement. En combinant plusieurs indicateurs, dont ceux de l'enveloppe, moins liés au niveau d'énergie, la forêt aléatoire divise les fausses alertes par quatre.
+
+## Synthèse
+
+::: {#tbl-detecteurs}
+
+| Détecteur | Charge non vue | Second roulement | Sans défauts étiquetés | Localise |
+|---|:-:|:-:|:-:|:-:|
+| Seuil sur le RMS | 0 % | 48 % | oui | non |
+| Forêt aléatoire | 0 % | 10,9 % | non | oui |
+| Autoencodeur | 1 à 2 % | 3 à 7 % | oui | non |
+
+Taux de fausses alertes des trois détecteurs. Aucun défaut n'est manqué, à une fenêtre près sur 1 500 pour la forêt aléatoire sur le second roulement. Les protocoles diffèrent légèrement : l'autoencodeur est appris sur les charges 0 à 2 HP et travaille sur des fenêtres de 0,1 s.
+
+:::
+
+La forêt aléatoire est retenue parce qu'elle est la seule à **localiser** le défaut, et qu'elle égale le seuil sur le RMS pour la détection sur le roulement d'apprentissage. Pour la seule détection sur un roulement nouveau, l'autoencodeur se transpose mieux que les deux autres, sans avoir besoin de défauts étiquetés. Les deux approches sont donc complémentaires (voir les perspectives).
+
+{{< pagebreak >}}
+
+# Analyse et difficultés rencontrées durant le projet {#sec-difficultes}
+
+## Le projet data science, découverte d'un nouvel univers {#sec-diff-univers}
+
+### Des principes physiques hors du programme de la formation
+
+Aucun membre du groupe n'avait d'expérience en analyse vibratoire. Exploiter les signaux vibratoires a exigé des notions de traitement du signal non abordées en formation : **transformée de Fourier**, filtrage dans une bande de fréquences, **extraction d'enveloppe** (transformée de Hilbert) et fréquences caractéristiques des roulements (BPFI, BPFO, BSF). Ces notions avaient été abordées lors de notre cursus scolaire, plus ou moins lointain…
+
+### Un type de données inhabituel : des calculs supplémentaires, et un risque associé
+
+Avant toute modélisation, il a fallu construire la table d'apprentissage :
+
+- **découper** chaque enregistrement en fenêtres de courte durée
+- **calculer des indicateurs** sur chaque fenêtre (RMS, kurtosis, indicateurs spectraux…)
+
+Même si l'on trouve des fonctions Python « prêtes à l'emploi », ces notions ont rendu l'analyse exploratoire plus longue et plus complexe : chaque calcul ajouté peut introduire une erreur ou une perte d'information, et donc déformer les données.
+
+::: {.callout-tip title="À retenir"}
+Cette expérience met en évidence que la data science peut s'appliquer à des domaines très variés.
+
+Par ailleurs, il faut veiller à ce que chaque calcul ou transformation de données soit validé par les connaissances métier.
+:::
+
+## Prévisionnel : l'incertitude sur les données du projet {#sec-diff-previsionnel}
+
+Notre objectif initial était de travailler sur des données d'entreprise (I-Care), auxquelles nous n'avons finalement pas eu accès. Le sujet restait proche, mais la nature et le volume de ces données auraient été très différents, et ils conditionnaient directement l'approche du projet.
+
+Cette situation a créé une forte incertitude sur l'organisation du travail :
+
+- des hésitations sur les tâches à réaliser, dues à l'absence de positionnement « métier »
+- un démarrage plus lent, faute de savoir sur quelles données le projet porterait
+
+::: {.callout-tip title="À retenir"}
+Avant de lancer un projet, il faut parfois investir du temps pour s'assurer que les données seront disponibles à temps et avec une qualité suffisante, afin de ne pas engager un projet qui ne pourrait pas aboutir.
+:::
+
+## Les connaissances métier {#sec-diff-metier}
+
+Le groupe disposait de bases en maintenance industrielle, mais ne connaissait pas la place de l'analyse vibratoire dans les stratégies de maintenance.
+
+Les modèles ont été orientés vers trois objectifs : détecter tôt sans multiplier les fausses alertes, localiser le défaut, puis estimer sa gravité. Ces objectifs ont guidé nos choix de métriques (taux de défauts manqués, puis taux de fausses alertes, puis F1 macro), mais ils se sont construits progressivement, au fil du projet.
+
+L'absence d'accompagnement de la part d'I-Care a freiné l'acquisition de l'expertise métier. Un échange avec des spécialistes nous aurait peut-être conduits à choisir d'autres objectifs, et par conséquent d'autres métriques d'évaluation.
+
+::: {.callout-tip title="À retenir"}
+Un des moyens de lever ce risque est de désigner un « sponsor » de projet : il garantit l'alignement stratégique avec la direction, l'allocation des ressources et la levée des blocages, et peut ouvrir l'accès aux experts métier.
+:::
+
+## Jeux de données : acquisition et compréhension {#sec-diff-donnees}
+
+### Comprendre le montage d'essai
+
+Le banc CWRU comporte deux roulements montés sur le même arbre, chacun surveillé par un accéléromètre (côté entraînement « DE » et côté ventilateur « FE »). Le défaut d'un roulement est aussi capté, de façon atténuée, par le capteur de l'autre. Il a donc fallu comprendre précisément quel roulement porte le défaut et quel capteur le mesure, avant de pouvoir constituer des jeux de données cohérents.
+
+### Une documentation incomplète
+
+L'acquisition des données a pris du temps, car leur description n'était pas toujours claire : plan d'expérience incomplet pour le roulement côté ventilateur (positions et charges manquantes), fréquence d'échantillonnage et vitesse de rotation parfois différentes entre le site et les fichiers, unité des signaux non précisée.
+
+::: {.callout-tip title="À retenir"}
+Dans un projet en entreprise, il est essentiel d'identifier dès le départ un interlocuteur capable de présenter les données brutes.
+
+Comme pour beaucoup de sujets, une documentation adaptée reste essentielle pour assurer la continuité et la cohérence d'un projet au fil du temps.
+:::
+
+## Compétences techniques et théoriques {#sec-diff-competences}
+
+Plusieurs compétences nécessaires au projet n'étaient pas totalement acquises, ou ne faisaient pas partie de la formation, au moment où nous en avions besoin :
+
+- le traitement du signal (Fourier, enveloppe, filtrage), indispensable dès l'analyse exploratoire
+- les protocoles de validation adaptés à des données groupées (validation croisée par fichier, par charge, validation imbriquée)
+- le Deep Learning (CNN, auto-encodeur), abordé en formation alors que le projet était déjà avancé
+- les outils de travail collaboratif (Git, GitHub) et de rédaction (Quarto), nouveaux pour une partie du groupe
+
+## Pertinence de l'approche et des modèles : tous les objectifs initiaux ne sont pas atteints {#sec-diff-pertinence}
+
+### Une exploration des modèles plutôt séquentielle
+
+Les modèles de Machine Learning ont été testés les uns après les autres.
+
+Leurs hyperparamètres ont bien été optimisés (recherche par grille en validation croisée).
+
+Cependant, dans une démarche d'amélioration continue, il aurait été intéressant d'approfondir, dans une étape suivante, les deux meilleurs modèles pour tenter d'obtenir de meilleurs résultats.
+
+### Sévérité et durée de vie résiduelle
+
+Les résultats sur la sévérité des défauts, et donc sur l'estimation d'une durée de vie résiduelle, restent insuffisants en l'état. Les données CWRU ne comportent qu'un seul roulement par type et taille de défaut, ce qui ne permet pas d'apprendre une relation généralisable entre le signal et la taille du défaut.
+
+Au-delà de la première mission (détecter un roulement défectueux), c'est pourtant un axe important pour l'industrie : il permet de planifier les interventions et de surveiller de près les éléments qui présentent les premiers signes de défaillance. Davantage de temps aurait permis de rechercher d'autres jeux de données, avec des essais de dégradation progressive.
+
+::: {.callout-tip title="À retenir"}
+Dans un projet, l'objectif final n'est pas toujours atteint : il faut savoir capitaliser sur les résultats obtenus et sur les échecs (« lessons learned ») afin de préparer les éventuelles phases suivantes.
+:::
+
+## Organisation et travail en équipe {#sec-diff-equipe}
+
+Le projet a réuni une équipe nouvelle, dont les membres ne se connaissaient pas. La constitution du groupe et la coordination ont demandé du temps.
+
+- Des routines d'échanges ont été mises en place deux fois par semaine, puis ajustées selon les périodes.
+- Le travail a davantage été mené en silos que comme un projet commun : chacun a développé une partie de l'analyse ou des modèles.
+- Il a été difficile de capitaliser les travaux de chacun : codes, choix de données et résultats n'étaient pas toujours harmonisés, ce qui a compliqué la fusion des rapports.
+
+::: {.callout-tip title="À retenir"}
+Le manque de coordination dans une équipe peut rapidement conduire à réaliser deux fois les mêmes tâches, de manières différentes, ce qui représente une perte de temps importante.
+
+La structuration du projet en étapes intermédiaires est donc essentielle à sa réussite.
+:::
+
+## Les tâches les plus chronophages {#sec-diff-chronophages}
+
+| Tâche | Pourquoi elle a pris du temps |
+|---|---|
+| Compréhension globale du sujet | Montage à deux roulements, influence de la vitesse de rotation et de la charge, lecture d'une documentation incomplète |
+| Création des indicateurs spectraux | Notions de traitement du signal à acquérir (Fourier, enveloppe, fréquences caractéristiques) avant de pouvoir les calculer |
+| Définition des plans de test | Éviter la fuite de données entre fenêtres d'un même fichier, choisir des protocoles réalistes (charge non vue, roulement non vu) |
+
+: Tâches les plus chronophages du projet. {#tbl-diff-chronophages}
+
+## Conclusion {#sec-diff-conclusion}
+
+Ce projet nous a permis de mettre en application, sur un cas concret, les connaissances apprises ou en cours d'acquisition durant la formation.
+
+Au-delà de la data science, la plupart des difficultés rencontrées relèvent de la conduite de projet et sont communes à de nombreux projets :
+
+- l'accès aux données et à l'expertise métier
+- l'anticipation des compétences nécessaires
+- la définition d'objectifs réalistes et la capitalisation des résultats
+- la coordination d'une équipe nouvelle
+
+Malgré ces difficultés, l'objectif principal du projet, **détecter un roulement défectueux**, est atteint, et les limites du jeu de données (sévérité, durée de vie résiduelle) sont identifiées et expliquées.
+
+Nous retenons surtout qu'un projet de data science réussit autant par sa préparation (données, interlocuteurs métier, organisation de l'équipe) que par le choix des modèles.
+
+
+
+
+
+
+# Perspectives
+
+## Combiner l'autoencodeur et la forêt aléatoire
+
+Les deux approches sont complémentaires. L'autoencodeur détecte sans exemple de défaut et se transpose mieux à un roulement nouveau ; la forêt aléatoire est la seule à localiser le défaut. Un système en deux temps tirerait parti des deux : l'autoencodeur, entraîné sur les signaux sains de chaque machine, donne l'alarme ; la forêt aléatoire, appelée seulement après l'alarme, propose une localisation que l'expert confirme par le spectre d'enveloppe.
+
+## Une carte de contrôle ajustée sur les conditions de fonctionnement
+
+Le seuil sur le RMS échoue lorsque les conditions changent, parce que le niveau du signal sain varie avec la charge. Une carte de contrôle de régression, qui modélise la ligne de base en fonction de la charge et surveille les écarts à ce modèle, pourrait lever cette limite lorsque la charge est mesurée. Simple et explicable, elle servirait aussi de garde-fou en parallèle d'un modèle plus complexe.
+
+## Décider par roulement, et non par fenêtre
+
+Tous les résultats sont exprimés en fenêtres de quelques dixièmes de seconde, alors que la décision porte sur un roulement. Regrouper les prédictions des fenêtres d'un même enregistrement, par exemple par vote majoritaire, réduirait les fausses alertes isolées et donnerait des résultats dans la bonne unité statistique.
+
+## Fiabiliser le seuil d'alarme
+
+Le seuil de l'autoencodeur, calculé sur les données d'apprentissage, varie d'un apprentissage à l'autre et sous-estime la dispersion des signaux sains nouveaux. Le calibrer sur des signaux sains mis de côté, ou moyenner plusieurs modèles, le rendrait plus stable.
+
+## Tester sur d'autres données
+
+Les limites principales du projet viennent du plan d'expérience du CWRU. D'autres jeux de données permettraient de les dépasser :
+
+- **plus de roulements par classe, avec des défauts réels** : le jeu de l'université de Paderborn (32 roulements, dont 14 avec des défauts apparus en fonctionnement) permettrait de tester la localisation sur des roulements réellement nouveaux, et d'aborder l'estimation de la taille ;
+- **des essais de dégradation progressive** (IMS, PRONOSTIA) : ils permettraient de comparer les détecteurs sur un défaut naissant (lequel donne l'alarme le premier, sans fausse alerte auparavant ?) et d'aborder l'estimation de la durée de vie résiduelle ;
+- **des données industrielles**, avec du bruit réel, une vitesse variable et d'autres machines.
+
+## Vers une application
+
+Le but final du projet est une application de surveillance. Elle reprendrait la chaîne retenue : calcul des indicateurs ou fenêtrage du signal, détection, diagnostic indicatif et décision par roulement, avec une interface qui affiche l'évolution du score d'anomalie comme une carte de contrôle.

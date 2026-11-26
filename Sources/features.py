@@ -197,3 +197,17 @@ def equilibrer(X_train, y_train, X_test, y_test, type="train", n=None, seed=42):
         return (*sous_echantillonner(X_train, y_train, n),
                 *sous_echantillonner(X_test, y_test, n))
     raise ValueError(f"type inconnu : {type!r} (attendu : 'min', 'train', 'train2test')")
+
+
+
+
+def standardiser_par_fenetre(X):
+    """Z-score par fenêtre (axis=1) : équivalent exact de StandardScaler().fit_transform(X.T).T,
+    mais SANS ÉTAT — chaque fenêtre n'utilise que sa propre moyenne/écart-type.
+    Aucune fuite train/test possible, et rien à sauvegarder : la même fonction
+    s'applique telle quelle à l'inférence sur un nouveau fichier."""
+    X = np.asarray(X, dtype=np.float64)
+    mu = X.mean(axis=1, keepdims=True)
+    sd = X.std(axis=1, keepdims=True)          # ddof=0, identique à StandardScaler
+    sd = np.where(sd == 0, 1.0, sd)            # variance nulle -> scale 1, comme StandardScaler
+    return ((X - mu) / sd).astype(np.float32)
