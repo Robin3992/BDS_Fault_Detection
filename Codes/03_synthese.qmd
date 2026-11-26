@@ -82,86 +82,93 @@ Ce sont des limites du **plan d'expérience**, et non des méthodes. Elles expli
 
 # Les modèles comparés
 
-# Le modèle proposé
+# Le modèle proposé : la forêt aléatoire
 
-## Principe : apprendre le sain, signaler l'écart
+## Principe
 
-Le modèle proposé est un **autoencodeur convolutif**. Il se compose d'un encodeur, qui compresse une fenêtre de signal en un résumé réduit, et d'un décodeur, qui reconstruit la fenêtre à partir de ce résumé. Il est entraîné uniquement sur des signaux sains : il apprend à quoi ressemble un roulement sain. Un signal défectueux, avec des chocs qu'il n'a jamais vus, est mal reconstruit. L'erreur de reconstruction sert donc de score d'anomalie, et une alarme est déclenchée lorsqu'elle dépasse un seuil fixé sur les signaux sains.
+Le modèle proposé est la forêt aléatoire retenue dans le rapport 2. Elle prédit, pour chaque fenêtre de 0,2 s, l'état du roulement parmi quatre classes : sain, défaut de bague intérieure (IR), de bille (B) ou de bague extérieure (OR). Elle répond donc en une seule fois aux deux premières questions : détecter un défaut et le localiser.
 
-## Ses avantages
+Elle utilise les 9 indicateurs calculés sur chaque fenêtre : quatre indicateurs temporels (RMS, pic, facteur de crête, kurtosis) et cinq indicateurs spectraux (RMS_bande et l'amplitude de l'enveloppe aux fréquences BPFI, BPFO, BSF et FTF). Ses hyperparamètres ont été choisis par validation croisée imbriquée, en laissant de côté une charge à chaque pli.
 
-**Il n'a besoin que de données saines.** L'apprentissage est non supervisé : aucun exemple de défaut n'est nécessaire, alors que les défauts sont rares et coûteux à obtenir en usine. Il suffit d'enregistrer le signal de la machine après la pose d'un roulement neuf.
+## Pourquoi la forêt aléatoire
 
-**Il détecte la forme du signal, pas son niveau.** Chaque fenêtre est normalisée avant d'entrer dans le modèle. L'amplitude du signal, qui varie notamment avec la charge, n'est donc pas interprétée comme un défaut : le modèle réagit aux chocs, et non aux changements de conditions de fonctionnement.
+- **Elle est la meilleure sur les critères industriels.** Parmi les cinq familles de modèles comparées, elle est la seule à n'avoir ni défaut manqué ni fausse alerte, que l'on teste un enregistrement ou une charge non vus.
+- **Elle s'appuie sur des indicateurs physiques.** Les indicateurs d'enveloppe sont liés aux fréquences de passage des billes sur le défaut : ils rendent le modèle moins dépendant du niveau d'énergie. Avec eux, les fausses alertes sur le second roulement sont divisées par deux.
+- **Elle est interprétable.** L'importance de chaque indicateur se lit directement, et chaque indicateur a un sens pour un expert en vibrations.
+- **Elle est simple à mettre en œuvre.** Elle ne demande ni mise à l'échelle des variables ni calcul lourd, et se réentraîne en quelques secondes.
 
-**Il est adapté à la nature du signal.** Les convolutions détectent des motifs locaux et répétés, comme les chocs successifs d'un défaut, quelle que soit leur position dans la fenêtre, avec peu de paramètres.
+## Ses limites
 
-**Il généralise lorsqu'on élargit les données saines.** Entraîné sur les signaux sains de plusieurs roulements, il apprend ce qu'est un signal sain de façon plus générale, sans perte de performance.
+- **Elle a besoin d'exemples de défauts étiquetés**, rares et coûteux à obtenir en usine.
+- **Sa localisation se dégrade sur un roulement nouveau.** Sur le roulement côté ventilateur, la plupart des défauts de bague intérieure sont classés comme défauts de bille. La localisation reste une piste pour l'expert, à confirmer par le spectre d'enveloppe.
+- **Ses seuils sont propres au banc d'essai.** Appliquée au roulement côté ventilateur, plus énergétique, elle déclenche environ 11 % de fausses alertes.
+- **Elle n'estime pas la taille du défaut** : les données ne le permettent pas.
 
-**Il peut apprendre à ignorer le bruit.** Dans sa version débruiteuse (DAE), il est entraîné à reconstruire un signal sain propre à partir de copies bruitées. Il devient plus robuste au bruit ambiant d'un environnement industriel, et reconnaît les signaux sains plus strictement.
+# Le modèle proposé face à des détecteurs plus simples
 
-**Il privilégie la sécurité.** Aucun défaut n'a été manqué dans les essais réalisés : en détection d'anomalie, mieux vaut une alerte de trop qu'une casse.
+La forêt aléatoire demande des défauts étiquetés et une quarantaine de modèles comparés pour être choisie. Pour la seule détection, fait-elle mieux que deux alternatives plus simples ?
 
-**Il s'étend sans redéfinir d'indicateurs.** Le même cadre s'applique à plusieurs capteurs, à de nouvelles conditions de fonctionnement ou à un autre roulement : il suffit de l'entraîner sur leurs signaux sains.
+- **un seuil sur le RMS**, fixé sur les fenêtres saines : c'est la référence métier, à la manière d'une carte de contrôle ;
+- **un autoencodeur**, entraîné uniquement sur des signaux sains, qui apprend la forme du signal sain et signale ce qu'il reconstruit mal.
 
-En contrepartie, il demande un entraînement, des réglages (taille des fenêtres, architecture, seuil) et une maintenance, et sa décision est moins facile à expliquer qu'un indicateur physique.
+Ces deux détecteurs n'ont besoin d'aucun exemple de défaut. Les seuils sont fixés au percentile 99 des fenêtres saines d'apprentissage. Deux situations sont testées : une charge jamais vue (3 HP) et un roulement jamais vu (côté ventilateur).
 
-## Ce qu'il reste à démontrer
+## Autoencodeur et seuil sur le RMS
 
-- **La détection précoce** : les défauts du CWRU sont francs et énergétiques. Sur un défaut naissant, à quel moment l'autoencodeur donne-t-il l'alarme ? Seules des données de dégradation progressive permettent de répondre.
-- **La transposition à une autre machine** : les essais portent sur un seul banc d'essai.
-- **La robustesse en conditions réelles** : bruit industriel, autres capteurs, vitesse variable.
-- **Le réglage du seuil d'alarme** : il dépend de l'apprentissage, et un calibrage sur des signaux sains mis de côté le rendrait plus fiable.
+Sur le roulement d'apprentissage, les deux détecteurs ne manquent aucun défaut à une charge non vue. Le seuil sur le RMS ne commet aucune fausse alerte, mais de justesse : la fenêtre la plus faible du défaut de bille de 0,014" ne dépasse le seuil que d'environ 5 %. L'énergie dans la bande de résonance (RMS_bande) sépare mieux, mais le niveau du roulement sain y double presque entre 0 et 3 HP : le seuil déclenche alors 100 % de fausses alertes. L'autoencodeur, qui travaille sur le signal normalisé, reste à 1 à 2 % de fausses alertes sans connaître la charge.
+
+Sur un roulement jamais vu, l'écart est net. Entraîné sur les seuls sains du roulement côté entraînement, l'autoencodeur sépare parfaitement sains et défauts du roulement côté ventilateur (AUC = 1 sur trois apprentissages), sans défaut manqué, avec 5,5 à 10,5 % de fausses alertes à 3 HP selon l'apprentissage. Le seuil sur le RMS, appris dans les mêmes conditions, déclenche 98 % de fausses alertes : il doit être réappris pour chaque roulement.
+
+## Forêt aléatoire et seuil sur le RMS
+
+Sur le roulement d'apprentissage, la forêt aléatoire et le seuil sur le RMS font tous deux un sans-faute à une charge non vue. La forêt n'apporte donc rien pour la détection, mais elle localise le défaut, ce que le RMS ne sait pas faire.
+
+Sur le roulement côté ventilateur, avec un apprentissage sur toutes les charges du roulement côté entraînement, la forêt aléatoire manque 1 fenêtre défectueuse sur 1 500 et déclenche 10,9 % de fausses alertes. Avec les mêmes fenêtres saines d'apprentissage, le seuil sur le RMS ne manque aucun défaut mais déclenche 48 % de fausses alertes, et le seuil sur RMS_bande 29 %. Le roulement sain côté ventilateur est plus énergétique, si bien que sur ce roulement, le sain le plus fort dépasse même le défaut le plus faible : aucun seuil sur le RMS ne peut les séparer parfaitement. En combinant plusieurs indicateurs, dont ceux de l'enveloppe, moins liés au niveau d'énergie, la forêt aléatoire divise les fausses alertes par quatre.
+
+## Synthèse
+
+::: {#tbl-detecteurs}
+
+| Détecteur | Charge non vue | Second roulement | Sans défauts étiquetés | Localise |
+|---|:-:|:-:|:-:|:-:|
+| Seuil sur le RMS | 0 % | 48 % | oui | non |
+| Forêt aléatoire | 0 % | 10,9 % | non | oui |
+| Autoencodeur | 1 à 2 % | 3 à 7 % | oui | non |
+
+Taux de fausses alertes des trois détecteurs. Aucun défaut n'est manqué, à une fenêtre près sur 1 500 pour la forêt aléatoire sur le second roulement. Les protocoles diffèrent légèrement : l'autoencodeur est appris sur les charges 0 à 2 HP et travaille sur des fenêtres de 0,1 s.
+
+:::
+
+La forêt aléatoire est retenue parce qu'elle est la seule à **localiser** le défaut, et qu'elle égale le seuil sur le RMS pour la détection sur le roulement d'apprentissage. Pour la seule détection sur un roulement nouveau, l'autoencodeur se transpose mieux que les deux autres, sans avoir besoin de défauts étiquetés. Les deux approches sont donc complémentaires (voir les perspectives).
 
 # Analyse autocritique
 
 # Perspectives
 
-## Principe : apprendre le sain, signaler l'écart
+## Combiner l'autoencodeur et la forêt aléatoire
 
-Le modèle proposé fonctionne en deux temps :
+Les deux approches sont complémentaires. L'autoencodeur détecte sans exemple de défaut et se transpose mieux à un roulement nouveau ; la forêt aléatoire est la seule à localiser le défaut. Un système en deux temps tirerait parti des deux : l'autoencodeur, entraîné sur les signaux sains de chaque machine, donne l'alarme ; la forêt aléatoire, appelée seulement après l'alarme, propose une localisation que l'expert confirme par le spectre d'enveloppe.
 
-1. **Détection** par un autoencodeur convolutif, entraîné uniquement sur les signaux sains de la machine surveillée. L'erreur de reconstruction sert de score d'anomalie ; le seuil d'alarme est le percentile 99 des scores des sains d'apprentissage. Dans un environnement bruité, on utilise sa version débruiteuse (DAE), entraînée sur des copies bruitées des signaux sains.
-2. **Diagnostic indicatif**, déclenché seulement après une alarme : une forêt aléatoire sur les 9 indicateurs temporels et spectraux propose une localisation (IR, B ou OR), confirmée par la lecture du spectre d'enveloppe aux fréquences BPFI et BPFO. Sur un roulement nouveau, cette localisation n'est juste qu'entre une fois sur deux et trois fois sur quatre : c'est une piste pour l'expert, pas une décision.
+## Une carte de contrôle ajustée sur les conditions de fonctionnement
 
-La taille du défaut n'est pas estimée : les données ne le permettent pas.
+Le seuil sur le RMS échoue lorsque les conditions changent, parce que le niveau du signal sain varie avec la charge. Une carte de contrôle de régression, qui modélise la ligne de base en fonction de la charge et surveille les écarts à ce modèle, pourrait lever cette limite lorsque la charge est mesurée. Simple et explicable, elle servirait aussi de garde-fou en parallèle d'un modèle plus complexe.
 
-## Pourquoi un autoencodeur plutôt qu'un seuil sur le RMS
+## Décider par roulement, et non par fenêtre
 
-**Sur le roulement d'apprentissage, le RMS suffit.** Avec un seuil fixé sur les sains de 0 à 2 HP, la règle « RMS supérieur au seuil » ne commet aucune erreur à 3 HP, une charge non vue, contre 1 à 2 % de fausses alertes pour l'autoencodeur. Mais elle sépare les défauts de justesse : la fenêtre la plus faible du défaut de bille de 0,014" ne dépasse le seuil que d'environ 5 %. L'énergie dans la bande de résonance (RMS_bande) sépare beaucoup mieux, le défaut le plus faible valant le double du sain, mais le niveau du roulement sain y double presque entre 0 et 3 HP : le même seuil déclenche alors 100 % de fausses alertes à 3 HP. Un seuil sur une amplitude est donc soit peu discriminant, soit sensible aux conditions de fonctionnement. On pourrait ajuster la ligne de base à la charge, comme dans une carte de contrôle de régression, mais il faudrait mesurer la charge en continu. L'autoencodeur, qui travaille sur le signal normalisé, reste à 1 à 2 % de fausses alertes à 3 HP sans connaître la charge.
+Tous les résultats sont exprimés en fenêtres de quelques dixièmes de seconde, alors que la décision porte sur un roulement. Regrouper les prédictions des fenêtres d'un même enregistrement, par exemple par vote majoritaire, réduirait les fausses alertes isolées et donnerait des résultats dans la bonne unité statistique.
 
-**Sur un roulement jamais vu, l'autoencodeur se transpose, pas le RMS.** Entraîné uniquement sur les sains du roulement côté entraînement (0 à 2 HP), l'autoencodeur est appliqué tel quel au roulement côté ventilateur. Sur trois apprentissages successifs, il ne manque aucun défaut et sépare parfaitement sains et défauts (AUC = 1). Le taux de fausses alertes à 3 HP varie de 5,5 à 10,5 % selon l'apprentissage (médiane 5,7 %), car le seuil est calculé sur les données d'apprentissage (@tbl-ae-transfert). Dans les mêmes conditions, le seuil sur le RMS déclenche 98 % de fausses alertes : il doit être réappris pour chaque roulement.
+## Fiabiliser le seuil d'alarme
 
-::: {#tbl-ae-transfert}
+Le seuil de l'autoencodeur, calculé sur les données d'apprentissage, varie d'un apprentissage à l'autre et sous-estime la dispersion des signaux sains nouveaux. Le calibrer sur des signaux sains mis de côté, ou moyenner plusieurs modèles, le rendrait plus stable.
 
-| Essai | DE, 3 HP | FE, toutes charges | FE, 3 HP |
-|---|---:|---:|---:|
-| 1 | 1,1 % | 3,4 % | 5,5 % |
-| 2 | 2,0 % | 6,6 % | 10,5 % |
-| 3 | 1,2 % | 3,9 % | 5,7 % |
+## Tester sur d'autres données
 
-Fausses alertes de l'autoencodeur entraîné sur les seuls sains DE (0 à 2 HP), pour trois apprentissages. Dans tous les cas : AUC = 1, aucun défaut manqué.
+Les limites principales du projet viennent du plan d'expérience du CWRU. D'autres jeux de données permettraient de les dépasser :
 
-:::
+- **plus de roulements par classe, avec des défauts réels** : le jeu de l'université de Paderborn (32 roulements, dont 14 avec des défauts apparus en fonctionnement) permettrait de tester la localisation sur des roulements réellement nouveaux, et d'aborder l'estimation de la taille ;
+- **des essais de dégradation progressive** (IMS, PRONOSTIA) : ils permettraient de comparer les détecteurs sur un défaut naissant (lequel donne l'alarme le premier, sans fausse alerte auparavant ?) et d'aborder l'estimation de la durée de vie résiduelle ;
+- **des données industrielles**, avec du bruit réel, une vitesse variable et d'autres machines.
 
-Ces deux résultats tiennent à trois propriétés de l'autoencodeur :
+## Vers une application
 
-- **Il apprend la forme complète du signal sain**, alors que le RMS le résume en un seul nombre. Un changement de forme sans hausse d'énergie (chocs faibles, apparition d'une fréquence) reste en principe détectable.
-- **Il est robuste aux variations d'amplitude** : sur signal normalisé, il est insensible à la charge et au gain du capteur ; dans sa version débruiteuse, il tolère le bruit ambiant.
-- **Il s'étend sans redéfinir d'indicateurs** à plusieurs capteurs, à de nouvelles conditions de fonctionnement ou à un autre roulement.
-
-Comme une carte de contrôle, et contrairement aux classifieurs supervisés, il n'a besoin que de données saines, faciles à enregistrer après la pose d'un roulement neuf. En contrepartie, il demande un entraînement, des réglages et une maintenance, et sa décision est moins facile à expliquer.
-
-## Le RMS comme garde-fou
-
-Une carte de contrôle du RMS, à ligne de base propre à chaque roulement, est conservée en parallèle. Le RMS est retenu plutôt que RMS_bande, trop sensible à la charge. Simple et explicable, cette carte sert de contrôle de cohérence : une alarme de l'autoencodeur sans hausse d'énergie signale un changement de forme du signal à examiner ; une hausse d'énergie sans alarme de l'autoencodeur signale un modèle à revoir.
-
-## Ce qu'il reste à démontrer
-
-Les données CWRU établissent deux avantages de l'autoencodeur : sa robustesse à une charge non vue sans avoir à la mesurer, et sa transposition à un autre roulement sans nouvelle ligne de base. D'autres points restent à vérifier :
-
-- **la détection précoce** : sur un défaut naissant, l'autoencodeur donne-t-il l'alarme avant le RMS ? Les défauts du CWRU étant francs et énergétiques, le test décisif porte sur des données de dégradation progressive : lequel des détecteurs alerte le premier, sans fausse alerte auparavant ?
-- **la transposition à une autre machine** : le roulement côté ventilateur est un autre roulement, mais sur le même moteur et dans les mêmes enregistrements ;
-- **la robustesse en conditions réelles** : bruit industriel, autres capteurs ;
-- **la stabilité du seuil d'alarme** : calculé sur les données d'apprentissage, il varie d'un apprentissage à l'autre ; une calibration sur des sains mis de côté le rendrait plus stable et moins optimiste ;
-- **la comparaison avec une carte de contrôle ajustée sur la charge**, qui pourrait égaler l'autoencodeur lorsque la charge est mesurée.
+Le but final du projet est une application de surveillance. Elle reprendrait la chaîne retenue : calcul des indicateurs ou fenêtrage du signal, détection, diagnostic indicatif et décision par roulement, avec une interface qui affiche l'évolution du score d'anomalie comme une carte de contrôle.
