@@ -20,7 +20,7 @@ from pathlib import Path
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import RandomizedSearchCV, StratifiedGroupKFold, StratifiedKFold
-
+import joblib
 
 # --- Racine du dépôt (pour importer Sources/) ---
 def trouver_racine(dossier=Path(__file__).resolve()):
@@ -134,13 +134,14 @@ if __name__ == "__main__":
     X_train, X_test, y_train, y_test, g_train = preparer_donnees()
 
     # 2. Entrainement avec optimisation des hyperparamètres via RandomizedSearchCV
-    rf = optimiser_rf(X_train, y_train, groupes=g_train)
+    # rf = optimiser_rf(X_train, y_train, groupes=g_train)
+
+    # Sauvegarde optionnelle du modèle :
+    # joblib.dump(rf, RACINE / "Sources" / "Fitted_models" / "modele_RF.joblib")
+
+    # Chargement du modèle optimisé et entrainé
+    rf = joblib.load(RACINE / "Sources" / "Fitted_models" / "modele_RF.joblib")
 
     # 3. prédiction sur le test (capteur FE, jamais vu à l'entraînement)
     y_pred = predire(rf, X_test)
     print("\nPrédictions sur le test (FE) :", pd.Series(y_pred).value_counts().to_dict())
-
-    # Sauvegarde optionnelle du modèle :
-    # import joblib
-    # joblib.dump(rf, RACINE / "Sources" / "Fitted_models" / "modele_RF.joblib")
-    # Pour recharger : rf = joblib.load(RACINE / "Sources" / "Fitted_models" / "modele_RF.joblib")
