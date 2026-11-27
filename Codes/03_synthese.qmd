@@ -254,7 +254,7 @@ Autrement dit, la généralisation inter-roulement porte sur la détection des d
 
 # Tableau comparatif des modèles testés
 
-![Tableau comparatif des modèles testés](../images/rapport_3_synthese/comparaison_modeles.png){#fig-ml-p3 width=85% fig-align="center"}
+![Tableau comparatif des modèles testés](../images/rapport_3_synthese/comparaison_modeles.png){#fig-ml-p3 width=97% fig-align="center"}
 
 
 
