@@ -1,12 +1,13 @@
+# -*- coding: utf-8 -*-
 """
 code.py — Random Forest (détection de défauts de roulements, banc CWRU)
 =======================================================================
-Version simplifiée, fidèle aux notebooks de Codes/Robin/2.ML (1.ML_1.ipynb).
 
-3 fonctionnalités :
+Fonctionnalités :
     1. preparer_donnees()  : construit la table d'indicateurs et la découpe
                              train = capteur DE / test = capteur FE
-    2. entrainer_rf()      : entraîne le Random Forest sur le train
+    2. entrainer_rf()      : entraîne le Random Forest (hyperparamètres par défaut)
+       optimiser_rf()      : optimise les hyperparamètres (RandomizedSearchCV, CV groupée par fichier)
     3. predire()           : prédit les classes d'un jeu de fenêtres
 
 Exécution :  python code.py
@@ -18,7 +19,8 @@ from pathlib import Path
 
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
-
+from sklearn.model_selection import RandomizedSearchCV, StratifiedGroupKFold, StratifiedKFold
+import joblib
 
 # --- Racine du dépôt (pour importer Sources/) ---
 def trouver_racine(dossier=Path(__file__).resolve()):
@@ -32,7 +34,7 @@ sys.path.insert(0, str(RACINE))
 
 from Sources import data, features, indicateurs
 
-# Features utilisées (comme dans le notebook 1.ML_1) : 4 temporels + spectres (amp_raies)
+# Features utilisées : 4 temporels + spectres (amplitudes raies caractéristiques : fondamentale + 2 harmoniques)
 FEATURES = indicateurs.COLONNES_TEMPORELS + indicateurs.COLONNES_SPECTRAUX
 CIBLE    = "defaut"     # "defaut" = 4 classes (Sain/IR/B/OR) ; "classe" = 10 classes
 
@@ -43,7 +45,7 @@ CIBLE    = "defaut"     # "defaut" = 4 classes (Sain/IR/B/OR) ; "classe" = 10 cl
 def preparer_donnees():
     """Construit la table des indicateurs (fenêtres de 0,2 s) puis la découpe :
     train = capteur DE, test = capteur FE (split transverse, standardisé sur le train).
-    Renvoie X_train, X_test, y_train, y_test.
+    Renvoie X_train, X_test, y_train, y_test, g_train (fichiers du train, pour la CV groupée).
     """
     selection = data.selectionner(
         sources=("12kDE", "12kFE", "Normal"),
@@ -54,32 +56,65 @@ def preparer_donnees():
         canaux={"12kDE": ("DE",), "12kFE": ("FE",), "Normal": ("DE", "FE")},
     )
 
-    table = features.construire_table(selection, data.charger)   # indicateurs par fenêtre
+    # Chargement des données + ajout des indicateurs par fenêtre   
+    table = features.construire_table(selection, data.charger)   
     print(f"Table construite : {len(table)} fenêtres, {table['fichier'].nunique()} fichiers")
 
     # Split transverse DE -> FE + standardisation (fit sur le train uniquement)
-    X_train, X_test, y_train, y_test, _, _ = features.preparer_modeling_DE_FE(
+    X_train, X_test, y_train, y_test, g_train, _ = features.preparer_modeling_DE_FE(
         table, FEATURES, canal_train="DE", canal_test="FE", target=CIBLE)
 
     # Équilibrage des classes UNIQUEMENT sur le train (le test reste complet)
     X_train, y_train, X_test, y_test = features.equilibrer(
         X_train, y_train, X_test, y_test, type="train")
+    g_train = g_train.loc[X_train.index]     # groupes (fichiers) alignés sur le train équilibré
 
     print(f"Train : {len(X_train)} fenêtres | Test : {len(X_test)} fenêtres")
-    return X_train, X_test, y_train, y_test
+    return X_train, X_test, y_train, y_test, g_train
 
 
 # =====================================================================
 # 2. ENTRAÎNEMENT DU RANDOM FOREST
 # =====================================================================
-def entrainer_rf(X_train, y_train):
-    """Entraîne le Random Forest (200 arbres, classes équilibrées) et renvoie le modèle."""
-    rf = RandomForestClassifier(n_estimators=200, class_weight="balanced",
-                                random_state=42, n_jobs=-1)
-    rf.fit(X_train, y_train)
-    print(f"Random Forest entraîné sur {len(X_train)} fenêtres "
-          f"({len(rf.classes_)} classes : {list(rf.classes_)})")
-    return rf
+
+# Grille élargie pour l'optimisation (1080 combinaisons possibles)
+GRILLE_RF = {
+    "n_estimators":      [200, 400, 800],
+    "max_depth":         [None, 8, 16, 32],
+    "min_samples_leaf":  [1, 2, 5, 10, 20],
+    "min_samples_split": [2, 5, 10],
+    "max_features":      ["sqrt", "log2", None],
+    "class_weight":      [None, "balanced"],
+}
+
+
+def optimiser_rf(X_train, y_train, groupes=None, grille=None, cv=3, n_iter=30, scoring="f1_macro"):
+    """Optimise les hyperparamètres du Random Forest par RandomizedSearchCV.
+
+    - groupes : noms de fichiers du train -> CV groupée par fichier (pas de fuite entre plis)
+    - n_iter  : nombre de combinaisons testées (30 par défaut)
+    - refit=True : le meilleur modèle est réentraîné sur TOUT le train.
+    Renvoie le meilleur modèle entraîné.
+    """
+    if grille is None:
+        grille = GRILLE_RF
+    rf = RandomForestClassifier(random_state=42, n_jobs=-1)
+
+    if groupes is not None:
+        cv_split = StratifiedGroupKFold(n_splits=cv, shuffle=True, random_state=42)
+    else:
+        cv_split = StratifiedKFold(n_splits=cv, shuffle=True, random_state=42)
+        groupes = None
+
+    recherche = RandomizedSearchCV(rf, grille, n_iter=n_iter, scoring=scoring,
+                                   cv=cv_split, n_jobs=-1, refit=True,
+                                   random_state=42, verbose=1)
+    recherche.fit(X_train, y_train, groups=groupes)
+
+    print(f"\n{n_iter} combinaisons testées sur {cv} plis ({scoring})")
+    print("Meilleurs hyperparamètres :", recherche.best_params_)
+    print(f"Meilleur score ({scoring}) en validation croisée : {recherche.best_score_:.3f}")
+    return recherche.best_estimator_
 
 
 # =====================================================================
@@ -95,17 +130,18 @@ def predire(rf, X):
 # Exemple d'utilisation
 # =====================================================================
 if __name__ == "__main__":
-    # 1. préparation
-    X_train, X_test, y_train, y_test = preparer_donnees()
+    # 1. préparation (train = DE, test = FE)
+    X_train, X_test, y_train, y_test, g_train = preparer_donnees()
 
-    # 2. entraînement
-    rf = entrainer_rf(X_train, y_train)
+    # 2. Entrainement avec optimisation des hyperparamètres via RandomizedSearchCV
+    # rf = optimiser_rf(X_train, y_train, groupes=g_train)
+
+    # Sauvegarde optionnelle du modèle :
+    # joblib.dump(rf, RACINE / "Sources" / "Fitted_models" / "modele_RF.joblib")
+
+    # Chargement du modèle optimisé et entrainé
+    rf = joblib.load(RACINE / "Sources" / "Fitted_models" / "modele_RF.joblib")
 
     # 3. prédiction sur le test (capteur FE, jamais vu à l'entraînement)
     y_pred = predire(rf, X_test)
     print("\nPrédictions sur le test (FE) :", pd.Series(y_pred).value_counts().to_dict())
-
-    # Sauvegarde optionnelle du modèle :
-    # import joblib
-    # joblib.dump(rf, RACINE / "data" / "modele_RF.joblib")
-    # Pour recharger : rf = joblib.load(RACINE / "data" / "modele_RF.joblib")
