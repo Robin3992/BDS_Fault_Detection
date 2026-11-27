@@ -7,6 +7,8 @@ author:
   - Robin Grivet
 date: today
 lang: fr
+crossref:
+  tbl-title: "Tableau"
 format:
   html:
     toc: true
@@ -75,7 +77,7 @@ Nombre de roulements défectueux par case, côté entraînement. S'y ajoute un s
 
 :::
 
-Chaque enregistrement est découpé en fenêtres de quelques dixièmes de seconde, ce qui donne plusieurs milliers d'exemples. Mais ces fenêtres sont presque identiques au sein d'un même enregistrement : **98,9 % de la variabilité du RMS se situe entre enregistrements**. Ce sont des pseudo-réplicats. La taille d'échantillon réelle n'est pas le nombre de fenêtres, mais le nombre de roulements.
+Chaque enregistrement est découpé en fenêtres de 0,2 s, ce qui donne plusieurs milliers d'exemples. Mais ces fenêtres sont presque identiques au sein d'un même enregistrement : **98,9 % de la variabilité du RMS se situe entre enregistrements**. Ce sont des pseudo-réplicats. La taille d'échantillon réelle n'est pas le nombre de fenêtres, mais le nombre de roulements.
 
 Trois conséquences pèsent sur toute la suite :
 
@@ -89,15 +91,15 @@ Ce sont des limites du **plan d'expérience**, et non des méthodes. Elles expli
 
 
 
-# Compléments du rapport de modélisation (Auto-Encodeur)
+# Compléments du rapport de modélisation
 
-Nous nous sommes aperçus de plusieurs approximations dans la partie Auto-Encodeur du rapport de modélisation, que nous voulons clarifier :
+Nous nous sommes aperçus de plusieurs approximations dans le rapport de modélisation, que nous voulons clarifier :
 
 ## La taille des fenêtres
 
 La taille des fenêtres avait été réduite dans le cadre des développements car cela permettait :
 
-- d'augmenter le nombre de fenêtre (durée signal/durée fenêtre = nombre de fenêtre)  
+- d'augmenter le nombre de fenêtres (durée signal/durée fenêtre = nombre de fenêtres)  
 - de réduire le temps d'entraînement par fenêtre sans perte d'information (en gardant quelques tours d'arbre moteur)  
 
 Cette configuration n'était cependant pas adaptée pour être comparable aux analyses précédentes.
@@ -107,7 +109,7 @@ Des corrections ont donc été apportées dans les notebooks en ce sens.
 
 Ce changement de taille de fenêtre a des conséquences sur deux points : l'architecture du modèle et les performances obtenues.
 
-2.2.4 Le modèle Conv1D-AE
+### Architecture (rapport 2, § 2.2.4)
 
 ::: {#tbl-ae-architecture}
 
@@ -126,25 +128,36 @@ Ce changement de taille de fenêtre a des conséquences sur deux points : l'arch
 | conv1d_5 (sortie) | Conv1D, 1 filtre, noyau 7 | (None, **2048**, 1) | 225 |
 | Total | | | 7 721 |
 
+Architecture du Conv1D-AE avec des fenêtres de 2 048 points.
+
 :::
 
-2.2.5 Résultats (AE)
+::: {#tbl-ae-architecture}
+
+### Résultats (AE) (rapport 2, § 2.2.5)
 
 | AUC | FPR (fausses alarmes) | FNR (défauts manqués) |
 |----:|----------------------:|----------------------:|
 | 1,000 | **1,06 %**  (contre 6,45 % avant correction) | 0,00 % |
 
-Le seuil est toujours fixé au pourcentile 99 sur les données train, ce qui laisse théoriquement 1 % de faux positifs.
+Résultats de l'autoencodeur après correction de la taille des fenêtres. 
+:::
+
+Le seuil est toujours fixé au percentile 99 sur les données train, ce qui laisse théoriquement 1 % de faux positifs.
 Appliqué sur les données de test, on constate que le taux de fausses alarmes est désormais de 1,06 %, ce qui se rapproche de notre seuil théorique de 1 %.  
 
-2.2.6 Résultats test de robustesse à la charge
+### Résultats test de robustesse à la charge (rapport 2, § 2.2.6)
+
+::: {#tbl-ae-architecture}
 
 | Signal | seuil (p99) | AUC | FPR | FNR |
 |---|---:|---:|---:|---:|
 | Normalisé | 0,0370 | 1,0 | 2,75 % | 0,0 % |
 | Brut | 0,0013 | 1,0 | 99,79 % | 0,0 % |
+: Test de robustesse à la charge (apprentissage 0 à 2 HP, test 3 HP). 
 
-2.2.7 Apprentissage augmenté
+:::
+### Apprentissage augmenté (rapport 2, § 2.2.7)
 
 ::: {#tbl-ae-vs-dae}
 
@@ -162,21 +175,17 @@ Comparaison AE vs DAE (data augmentation par bruitage SNR 15→0 dB), évalués 
 
 L'ensemble des résultats est donc différent de ceux présentés dans le rapport de modélisation, mais restent dans les mêmes ordres de grandeur, et permettent de tirer les mêmes conclusions.
 
-  
-{{< pagebreak >}}
+## Limites des protocoles d'évaluation  
 
 
-## Limites des protocoles d'évaluations  
-
-
-L'auto-encodeur a été entraîné avec les données saines des **2 roulements** (avec un split par fichier pour éviter les fuites de données), puis chaque roulement a été testé séparément.  
+L'autoencodeur a été entraîné avec les données saines des **2 roulements** (avec un split par fichier pour éviter les fuites de données), puis chaque roulement a été testé séparément.  
 Dans cette configuration, les données saines du test proviennent du même banc que l'entraînement, ce qui implique un protocole d'évaluation limité car :
 
 1. les fenêtres saines du test partagent la **même signature de montage** que l'entraînement : même roulement, même capteur, même fixation, même bruit de fond du banc.  
 Le modèle peut donc reconnaître "ce banc précis" plutôt que d'identifier "un roulement sain" de façon générale.  
 Les métriques (AUC = 1,000, FPR faible) sont alors **optimistes** et ne disent rien de la capacité du modèle à se généraliser.
 
-2. les données sont **fortement corrélées** : mêmes campagnes de mesure, même environnement, et seule la charge varie entre les fichiers. La variabilité réelle d'un déploiement industriel est beaucoup plus grande : roulement différent (usure, fabrication), capteur et montage différents, machine et environnement différent.. Toutes ces conditions ne sont pas testées.
+2. les données sont **fortement corrélées** : mêmes campagnes de mesure, même environnement, et seule la charge varie entre les fichiers. La variabilité réelle d'un déploiement industriel est beaucoup plus grande : roulement différent (usure, fabrication), capteur et montage différents, machine et environnements différents. Toutes ces conditions ne sont pas testées.
 
 3. en production, le roulement et le capteur seront probablement **inconnus** du modèle. Un protocole qui ne teste que dans les conditions d'entraînement ne mesure donc pas l'adaptabilité du modèle, seulement la détection sur un banc connu, d'où la mise en place du protocole inter-roulement présenté ensuite.
 
@@ -199,8 +208,6 @@ Nombre de fenêtres du protocole d'évaluation inter-roulement : entraînement s
 
 Le protocole inverse a également été réalisé, pour généraliser davantage : entraînement sur les fenêtres saines **FE** et test sur **DE**
 
-**Résultats :**  
-
 Pour faciliter la lecture, les comparaisons seront mesurées uniquement avec le modèle DAE :
 
 ::: {#tbl-dae-inter-roulement}
@@ -216,7 +223,7 @@ Comparaison DAE inter-roulement.
 
 La capacité des modèles à séparer sains et défauts reste parfaite :   
 **AUC = 1,000** dans les deux sens.  
-Toujours aucun défauts manqué : **FNR = 0 %** dans les deux sens.  
+Toujours aucun défaut manqué : **FNR = 0 %** dans les deux sens.  
 En revanche, on voit une nette différence sur les faux positifs :
 
 - DE -> FE : FPR **27,65 %**   
@@ -241,7 +248,7 @@ Le modèle a donc appris une représentation du signal sain suffisamment génér
   
 En revanche, le **taux de faux positifs dépend fortement du sens de transfert** (FPR DAE : 27,65 % en train DE -> test FE, contre 0,91 % en train FE -> test DE).  
 
-Deux mécanismes s'additionnent :  
+Deux mécanismes pourraient s'additionner :  
 
 1. Calibration du seuil : le seuil p99 est calculé sur les seuls signaux sains du roulement d'entraînement. Le signal sain FE étant plus dispersé, son seuil est plus haut (0,0216) ; le signal sain DE, plus resserré, donne un seuil plus bas (0,0155).  
 
@@ -249,12 +256,16 @@ Deux mécanismes s'additionnent :
 
 Autrement dit, la généralisation inter-roulement porte sur la détection des défauts, mais la frontière « sain » reste celle du roulement d'entraînement : le seuil et le profil de signal sain appris ne se transposent pas tels quels à un autre roulement.
 
+## Réseau convolutif : des fenêtres non normalisées
+
+Le rapport de modélisation indique que chaque fenêtre est centrée et réduite avant d'entrer dans le CNN. C'est inexact : la fonction de découpage ne contenait pas cette étape, et le réseau a été entraîné sur le signal brut. Les résultats restent valables, mais le réseau avait accès au niveau d'énergie du signal, ce qui explique en partie la reconnaissance parfaite du roulement sain. Dans les légendes des figures de spectre, « fenêtres normalisées » doit se lire « signal brut ».
+
 {{< pagebreak >}}
 
 
 # Tableau comparatif des modèles testés
 
-![Tableau comparatif des modèles testés](../images/rapport_3_synthese/comparaison_modeles.png){#fig-ml-p3 width=97% fig-align="center"}
+![Tableau comparatif des modèles testés, évalués sur des roulements déjà vus (même banc, charges ou enregistrements non vus). Les performances sur un roulement nouveau sont présentées en section 6.](../images/rapport_3_synthese/comparaison_modeles.png){#fig-ml-p3 width=97% fig-align="center"}
 
 
 
@@ -282,7 +293,7 @@ Elle utilise les 9 indicateurs calculés sur chaque fenêtre : quatre indicateur
 
 # Le modèle proposé face à des détecteurs plus simples
 
-La forêt aléatoire demande des défauts étiquetés et une quarantaine de modèles comparés pour être choisie. Pour la seule détection, fait-elle mieux que deux alternatives plus simples ?
+La forêt aléatoire demande des défauts étiquetés et une comparaison de plusieurs familles de modèles pour être choisie. Pour la seule détection, fait-elle mieux que deux alternatives plus simples ?
 
 - **un seuil sur le RMS**, fixé sur les fenêtres saines : c'est la référence métier, à la manière d'une carte de contrôle ;
 - **un autoencodeur**, entraîné uniquement sur des signaux sains, qui apprend la forme du signal sain et signale ce qu'il reconstruit mal.
@@ -291,9 +302,9 @@ Ces deux détecteurs n'ont besoin d'aucun exemple de défaut. Les seuils sont fi
 
 ## Autoencodeur et seuil sur le RMS
 
-Sur le roulement d'apprentissage, les deux détecteurs ne manquent aucun défaut à une charge non vue. Le seuil sur le RMS ne commet aucune fausse alerte, mais de justesse : la fenêtre la plus faible du défaut de bille de 0,014" ne dépasse le seuil que d'environ 5 %. L'énergie dans la bande de résonance (RMS_bande) sépare mieux, mais le niveau du roulement sain y double presque entre 0 et 3 HP : le seuil déclenche alors 100 % de fausses alertes. L'autoencodeur, qui travaille sur le signal normalisé, reste à 1 à 2 % de fausses alertes sans connaître la charge.
+Sur le roulement d'apprentissage, les deux détecteurs ne manquent aucun défaut à une charge non vue. Le seuil sur le RMS ne commet aucune fausse alerte, mais de justesse : la fenêtre la plus faible du défaut de bille de 0,014" ne dépasse le seuil que d'environ 5 %. L'énergie dans la bande de résonance (RMS_bande) sépare mieux, mais le niveau du roulement sain y double presque entre 0 et 3 HP : le seuil déclenche alors 100 % de fausses alertes. L'autoencodeur, qui travaille sur le signal normalisé, reste à 1 à 3 % de fausses alertes sans connaître la charge.
 
-Sur un roulement jamais vu, l'écart est net. Entraîné sur les seuls sains du roulement côté entraînement, l'autoencodeur sépare parfaitement sains et défauts du roulement côté ventilateur (AUC = 1 sur trois apprentissages), sans défaut manqué, avec 5,5 à 10,5 % de fausses alertes à 3 HP selon l'apprentissage. Le seuil sur le RMS, appris dans les mêmes conditions, déclenche 98 % de fausses alertes : il doit être réappris pour chaque roulement.
+Sur un roulement jamais vu, l'autoencodeur sépare toujours parfaitement sains et défauts du roulement côté ventilateur (AUC = 1), sans manquer de défaut. Son taux de fausses alertes dépend en revanche fortement du protocole : de 3 à 7 % pour un autoencodeur simple appris sur les charges 0 à 2 HP, mais 27,7 % pour l'autoencodeur débruiteur appris sur toutes les charges avec des fenêtres de 2 048 points (section 3.3). Appris comme l'autoencodeur simple, sur les sains DE de 0 à 2 HP, le seuil sur le RMS déclenche 98 % de fausses alertes à 3 HP. L'autoencodeur reconnaît donc un défaut sur un roulement nouveau ; c'est le placement de son seuil, appris sur un autre roulement, qui reste fragile.
 
 ## Forêt aléatoire et seuil sur le RMS
 
@@ -309,13 +320,13 @@ Sur le roulement côté ventilateur, avec un apprentissage sur toutes les charge
 |---|:-:|:-:|:-:|:-:|
 | Seuil sur le RMS | 0 % | 48 % | oui | non |
 | Forêt aléatoire | 0 % | 10,9 % | non | oui |
-| Autoencodeur | 1 à 2 % | 3 à 7 % | oui | non |
+| Autoencodeur | 1 à 3 % | 3 à 28 % | oui | non |
 
-Taux de fausses alertes des trois détecteurs. Aucun défaut n'est manqué, à une fenêtre près sur 1 500 pour la forêt aléatoire sur le second roulement. Les protocoles diffèrent légèrement : l'autoencodeur est appris sur les charges 0 à 2 HP et travaille sur des fenêtres de 0,1 s.
+Taux de fausses alertes des trois détecteurs. Aucun défaut n'est manqué, à une fenêtre près sur 1 500 pour la forêt aléatoire sur le second roulement. Les protocoles diffèrent légèrement : l'autoencodeur est appris sur les charges 0 à 2 HP et travaille sur des fenêtres de 0,2 s. La fourchette de l'autoencodeur sur le second roulement dépend de la variante (simple ou débruiteur), de la taille des fenêtres et des charges d'apprentissage.
 
 :::
 
-La forêt aléatoire est retenue parce qu'elle est la seule à **localiser** le défaut, et qu'elle égale le seuil sur le RMS pour la détection sur le roulement d'apprentissage. Pour la seule détection sur un roulement nouveau, l'autoencodeur se transpose mieux que les deux autres, sans avoir besoin de défauts étiquetés. Les deux approches sont donc complémentaires (voir les perspectives).
+La forêt aléatoire est retenue parce qu'elle est la seule à **localiser** le défaut, et qu'elle égale le seuil sur le RMS pour la détection sur le roulement d'apprentissage. Pour la seule détection sur un roulement nouveau, l'autoencodeur est le seul à séparer parfaitement sains et défauts sans aucun exemple de défaut, mais son taux de fausses alertes dépend fortement du protocole et peut dépasser celui de la forêt aléatoire. Les deux approches sont donc complémentaires (voir les perspectives).
 
 {{< pagebreak >}}
 
@@ -344,7 +355,7 @@ Par ailleurs, il faut veiller à ce que chaque calcul ou transformation de donn�
 
 ## Prévisionnel : l'incertitude sur les données du projet {#sec-diff-previsionnel}
 
-Notre objectif initial était de travailler sur des données d'entreprise (I-Care), auxquelles nous n'avons finalement pas eu accès. Le sujet restait proche, mais la nature et le volume de ces données auraient été très différents, et ils conditionnaient directement l'approche du projet.
+Notre objectif initial était de travailler sur les données d'un partenaire industriel, auxquelles nous n'avons finalement pas eu accès. Le sujet restait proche, mais la nature et le volume de ces données auraient été très différents, et ils conditionnaient directement l'approche du projet.
 
 Cette situation a créé une forte incertitude sur l'organisation du travail :
 
@@ -361,7 +372,7 @@ Le groupe disposait de bases en maintenance industrielle, mais ne connaissait pa
 
 Les modèles ont été orientés vers trois objectifs : détecter tôt sans multiplier les fausses alertes, localiser le défaut, puis estimer sa gravité. Ces objectifs ont guidé nos choix de métriques (taux de défauts manqués, puis taux de fausses alertes, puis F1 macro), mais ils se sont construits progressivement, au fil du projet.
 
-L'absence d'accompagnement de la part d'I-Care a freiné l'acquisition de l'expertise métier. Un échange avec des spécialistes nous aurait peut-être conduits à choisir d'autres objectifs, et par conséquent d'autres métriques d'évaluation.
+L'absence d'accompagnement de la part du partenaire industriel a freiné l'acquisition de l'expertise métier. Un échange avec des spécialistes nous aurait peut-être conduits à choisir d'autres objectifs, et par conséquent d'autres métriques d'évaluation.
 
 ::: {.callout-tip title="À retenir"}
 Un des moyens de lever ce risque est de désigner un « sponsor » de projet : il garantit l'alignement stratégique avec la direction, l'allocation des ressources et la levée des blocages, et peut ouvrir l'accès aux experts métier.
@@ -389,7 +400,7 @@ Plusieurs compétences nécessaires au projet n'étaient pas totalement acquises
 
 - le traitement du signal (Fourier, enveloppe, filtrage), indispensable dès l'analyse exploratoire
 - les protocoles de validation adaptés à des données groupées (validation croisée par fichier, par charge, validation imbriquée)
-- le Deep Learning (CNN, auto-encodeur), abordé en formation alors que le projet était déjà avancé
+- le Deep Learning (CNN, autoencodeur), abordé en formation alors que le projet était déjà avancé
 - les outils de travail collaboratif (Git, GitHub) et de rédaction (Quarto), nouveaux pour une partie du groupe
 
 ## Pertinence de l'approche et des modèles : tous les objectifs initiaux ne sont pas atteints {#sec-diff-pertinence}
@@ -460,7 +471,7 @@ Nous retenons surtout qu'un projet de data science réussit autant par sa prépa
 
 ## Combiner l'autoencodeur et la forêt aléatoire
 
-Les deux approches sont complémentaires. L'autoencodeur détecte sans exemple de défaut et se transpose mieux à un roulement nouveau ; la forêt aléatoire est la seule à localiser le défaut. Un système en deux temps tirerait parti des deux : l'autoencodeur, entraîné sur les signaux sains de chaque machine, donne l'alarme ; la forêt aléatoire, appelée seulement après l'alarme, propose une localisation que l'expert confirme par le spectre d'enveloppe.
+Les deux approches sont complémentaires. L'autoencodeur détecte sans exemple de défaut et reconnaît un défaut sur un roulement nouveau, à condition de recalibrer son seuil sur les sains de ce roulement ; la forêt aléatoire est la seule à localiser le défaut. Un système en deux temps tirerait parti des deux : l'autoencodeur, entraîné sur les signaux sains de chaque machine, donne l'alarme ; la forêt aléatoire, appelée seulement après l'alarme, propose une localisation que l'expert confirme par le spectre d'enveloppe.
 
 ## Une carte de contrôle ajustée sur les conditions de fonctionnement
 
@@ -468,7 +479,7 @@ Le seuil sur le RMS échoue lorsque les conditions changent, parce que le niveau
 
 ## Décider par roulement, et non par fenêtre
 
-Tous les résultats sont exprimés en fenêtres de quelques dixièmes de seconde, alors que la décision porte sur un roulement. Regrouper les prédictions des fenêtres d'un même enregistrement, par exemple par vote majoritaire, réduirait les fausses alertes isolées et donnerait des résultats dans la bonne unité statistique.
+Tous les résultats sont exprimés en fenêtres de 0,2 s, alors que la décision porte sur un roulement. Regrouper les prédictions des fenêtres d'un même enregistrement, par exemple par vote majoritaire, réduirait les fausses alertes isolées et donnerait des résultats dans la bonne unité statistique.
 
 ## Fiabiliser le seuil d'alarme
 
