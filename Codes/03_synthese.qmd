@@ -265,7 +265,7 @@ Le rapport de modélisation indique que chaque fenêtre est centrée et réduite
 
 # Tableau comparatif des modèles testés
 
-![Tableau comparatif des modèles testés, évalués sur des roulements déjà vus (même banc, charges ou enregistrements non vus). Les performances sur un roulement nouveau sont présentées en section 6.](../images/rapport_3_synthese/comparaison_modeles.png){#fig-ml-p3 width=85% fig-align="center"}
+![Tableau comparatif des modèles testés, évalués sur des roulements déjà vus (même banc, charges ou enregistrements non vus). Les performances sur un roulement nouveau sont présentées en section 6.](../images/rapport_3_synthese/comparaison_modeles.png){#fig-ml-p3 width=97% fig-align="center"}
 
 
 
