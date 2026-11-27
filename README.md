@@ -109,6 +109,6 @@ evaluer(rf, X_test, y_test)                            # matrice de confusion + 
 ## Données
 
 La base CWRU est téléchargée automatiquement au premier appel de `Sources.data.charger()`
-(dans `data/cwru_cache/`, gitigné). Les tables d'indicateurs sont générées dans
-`data/features/` (gitigné), par ex. via `features.sauvegarder_table(table)` ou
+(dans `data/cwru_cache/`, gitignore). Les tables d'indicateurs sont générées dans
+`data/features/` (gitignore), par ex. via `features.sauvegarder_table(table)` ou
 `Codes/01_analyse_exploratoire.qmd`.
