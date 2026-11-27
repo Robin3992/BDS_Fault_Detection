@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import RandomizedSearchCV, StratifiedGroupKFold, StratifiedKFold
 import joblib
@@ -32,10 +33,10 @@ def trouver_racine(dossier=Path(__file__).resolve()):
 RACINE = trouver_racine()
 sys.path.insert(0, str(RACINE))
 
-from Sources import data, features, indicateurs
+from Sources import data, features, indicateurs, models
 
 # Features utilisées : 4 temporels + spectres (amplitudes raies caractéristiques : fondamentale + 2 harmoniques)
-FEATURES = indicateurs.COLONNES_TEMPORELS + indicateurs.COLONNES_SPECTRAUX
+FEATURES = indicateurs.COLONNES_TEMPORELS + indicateurs.COLONNES_Mourad
 CIBLE    = "defaut"     # "defaut" = 4 classes (Sain/IR/B/OR) ; "classe" = 10 classes
 
 
@@ -57,7 +58,7 @@ def preparer_donnees():
     )
 
     # Chargement des données + ajout des indicateurs par fenêtre   
-    table = features.construire_table(selection, data.charger)   
+    table = features.construire_table_SpecMourad(selection, data.charger)   
     print(f"Table construite : {len(table)} fenêtres, {table['fichier'].nunique()} fichiers")
 
     # Split transverse DE -> FE + standardisation (fit sur le train uniquement)
@@ -127,6 +128,32 @@ def predire(rf, X):
 
 
 # =====================================================================
+# 4. ÉVALUATION (matrice de confusion + métriques) — via Sources.models
+# =====================================================================
+def evaluer(rf, X_test, y_test, titre="Random Forest (train DE -> test FE)"):
+    """Prédit X_test, puis affiche métriques + matrice de confusion.
+
+    Utilise Sources.models.evaluer_modele : accuracy, balanced accuracy, F1-macro,
+    rapport de classification par classe et matrice de confusion.
+    Ajoute les deux taux du projet : fausses alertes (FPR) et défauts manqués (FNR).
+    Renvoie la matrice de confusion.
+    """
+    y_pred = predire(rf, X_test)
+    cm = models.evaluer_modele(y_test, y_pred, classes=list(rf.classes_), titre=titre)
+
+    # Taux spécifiques au projet (classe "Sain" = référence)
+    y_true = np.asarray(y_test); y_p = np.asarray(y_pred)
+    sains = y_true == "Sain"
+    defauts = ~sains
+    fpr = (y_p[sains] != "Sain").mean() if sains.any() else float("nan")
+    fnr = (y_p[defauts] == "Sain").mean() if defauts.any() else float("nan")
+    print(f"Fausses alertes (FPR)   : {fpr:.2%}")
+    print(f"Défauts manqués (FNR)   : {fnr:.2%}")
+    return cm
+
+
+
+# =====================================================================
 # Exemple d'utilisation
 # =====================================================================
 if __name__ == "__main__":
@@ -134,14 +161,16 @@ if __name__ == "__main__":
     X_train, X_test, y_train, y_test, g_train = preparer_donnees()
 
     # 2. Entrainement avec optimisation des hyperparamètres via RandomizedSearchCV
-    # rf = optimiser_rf(X_train, y_train, groupes=g_train)
+    rf = optimiser_rf(X_train, y_train, groupes=g_train)
 
     # Sauvegarde optionnelle du modèle :
-    # joblib.dump(rf, RACINE / "Sources" / "Fitted_models" / "modele_RF.joblib")
+    joblib.dump(rf, RACINE / "Sources" / "Fitted_models" / "modele_RF.joblib")
 
     # Chargement du modèle optimisé et entrainé
-    rf = joblib.load(RACINE / "Sources" / "Fitted_models" / "modele_RF.joblib")
+    # rf = joblib.load(RACINE / "Sources" / "Fitted_models" / "modele_RF.joblib")
 
     # 3. prédiction sur le test (capteur FE, jamais vu à l'entraînement)
     y_pred = predire(rf, X_test)
     print("\nPrédictions sur le test (FE) :", pd.Series(y_pred).value_counts().to_dict())
+
+    evaluer(rf, X_test, y_test)    # matrice de confusion + métriques

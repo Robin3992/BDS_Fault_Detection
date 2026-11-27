@@ -115,20 +115,20 @@ Ce changement de taille de fenêtre a des conséquences sur deux points : l'arch
 
 | Couche | Type | Sortie | Paramètres |
 |---|---|---|---:|
-| Entrée | InputLayer | (None, **2048**, 1) | 0 |
-| conv1d | Conv1D, 32 filtres, noyau 7 | (None, **2048**, 32) | 256 |
-| max_pooling1d | ÷2 | (None, **1024**, 32) | 0 |
-| conv1d_1 | Conv1D, 16 filtres, noyau 5 | (None, **1024**, 16) | 2 576 |
-| max_pooling1d_1 | ÷2 | (None, **512**, 16) | 0 |
-| conv1d_2 | Conv1D, 8 filtres, noyau 3 — **bottleneck** | (None, **512**, 8) | 392 |
-| conv1d_3 | Conv1D, 16 filtres, noyau 5 | (None, **512**, 16) | 656 |
-| up_sampling1d | ×2 | (None, **1024**, 16) | 0 |
-| conv1d_4 | Conv1D, 32 filtres, noyau 7 | (None, **1024**, 32) | 3 616 |
-| up_sampling1d_1 | ×2 | (None, **2048**, 32) | 0 |
-| conv1d_5 (sortie) | Conv1D, 1 filtre, noyau 7 | (None, **2048**, 1) | 225 |
+| Entrée | InputLayer | (None, **2400**, 1) | 0 |
+| conv1d | Conv1D, 32 filtres, noyau 7 | (None, **2400**, 32) | 256 |
+| max_pooling1d | ÷2 | (None, **1200**, 32) | 0 |
+| conv1d_1 | Conv1D, 16 filtres, noyau 5 | (None, **1200**, 16) | 2 576 |
+| max_pooling1d_1 | ÷2 | (None, **600**, 16) | 0 |
+| conv1d_2 | Conv1D, 8 filtres, noyau 3 — **bottleneck** | (None, **600**, 8) | 392 |
+| conv1d_3 | Conv1D, 16 filtres, noyau 5 | (None, **600**, 16) | 656 |
+| up_sampling1d | ×2 | (None, **1200**, 16) | 0 |
+| conv1d_4 | Conv1D, 32 filtres, noyau 7 | (None, **1200**, 32) | 3 616 |
+| up_sampling1d_1 | ×2 | (None, **2400**, 32) | 0 |
+| conv1d_5 (sortie) | Conv1D, 1 filtre, noyau 7 | (None, **2400**, 1) | 225 |
 | Total | | | 7 721 |
 
-Architecture du Conv1D-AE avec des fenêtres de 2 048 points.
+Architecture du Conv1D-AE avec des fenêtres de 2 400 points (correspond à 0.2 secondes à une fréquence d'échantillonnage de 12Khz)
 
 :::
 
@@ -260,13 +260,10 @@ Autrement dit, la généralisation inter-roulement porte sur la détection des d
 
 Le rapport de modélisation indique que chaque fenêtre est centrée et réduite avant d'entrer dans le CNN. C'est inexact : la fonction de découpage ne contenait pas cette étape, et le réseau a été entraîné sur le signal brut. Les résultats restent valables, mais le réseau avait accès au niveau d'énergie du signal, ce qui explique en partie la reconnaissance parfaite du roulement sain. Dans les légendes des figures de spectre, « fenêtres normalisées » doit se lire « signal brut ».
 
-{{< pagebreak >}}
-
 
 # Tableau comparatif des modèles testés
 
-![Tableau comparatif des modèles testés, évalués sur des roulements déjà vus (même banc, charges ou enregistrements non vus). Les performances sur un roulement nouveau sont présentées en section 6.](../images/rapport_3_synthese/comparaison_modeles.png){#fig-ml-p3 width=97% fig-align="center"}
-
+![Tableau comparatif des modèles testés, évalués sur des roulements déjà vus (même banc, charges ou enregistrements non vus). Les performances sur un roulement nouveau sont présentées en section 6.](../images/rapport_3_synthese/comparaison_modeles.png){#fig-ml-p3 width=90% fig-align="center"}
 
 
 # Le modèle proposé : la forêt aléatoire
@@ -304,7 +301,7 @@ Ces deux détecteurs n'ont besoin d'aucun exemple de défaut. Les seuils sont fi
 
 Sur le roulement d'apprentissage, les deux détecteurs ne manquent aucun défaut à une charge non vue. Le seuil sur le RMS ne commet aucune fausse alerte, mais de justesse : la fenêtre la plus faible du défaut de bille de 0,014" ne dépasse le seuil que d'environ 5 %. L'énergie dans la bande de résonance (RMS_bande) sépare mieux, mais le niveau du roulement sain y double presque entre 0 et 3 HP : le seuil déclenche alors 100 % de fausses alertes. L'autoencodeur, qui travaille sur le signal normalisé, reste à 1 à 3 % de fausses alertes sans connaître la charge.
 
-Sur un roulement jamais vu, l'autoencodeur sépare toujours parfaitement sains et défauts du roulement côté ventilateur (AUC = 1), sans manquer de défaut. Son taux de fausses alertes dépend en revanche fortement du protocole : de 3 à 7 % pour un autoencodeur simple appris sur les charges 0 à 2 HP, mais 27,7 % pour l'autoencodeur débruiteur appris sur toutes les charges avec des fenêtres de 2 048 points (section 3.3). Appris comme l'autoencodeur simple, sur les sains DE de 0 à 2 HP, le seuil sur le RMS déclenche 98 % de fausses alertes à 3 HP. L'autoencodeur reconnaît donc un défaut sur un roulement nouveau ; c'est le placement de son seuil, appris sur un autre roulement, qui reste fragile.
+Sur un roulement jamais vu, l'autoencodeur sépare toujours parfaitement sains et défauts du roulement côté ventilateur (AUC = 1), sans manquer de défaut. Son taux de fausses alertes dépend en revanche fortement du protocole : de 3 à 7 % pour un autoencodeur simple appris sur les charges 0 à 2 HP, mais 27,7 % pour l'autoencodeur débruiteur appris sur toutes les charges avec des fenêtres de 2 400 points (section 3.3). Appris comme l'autoencodeur simple, sur les sains DE de 0 à 2 HP, le seuil sur le RMS déclenche 98 % de fausses alertes à 3 HP. L'autoencodeur reconnaît donc un défaut sur un roulement nouveau ; c'est le placement de son seuil, appris sur un autre roulement, qui reste fragile.
 
 ## Forêt aléatoire et seuil sur le RMS
 
@@ -496,3 +493,16 @@ Les limites principales du projet viennent du plan d'expérience du CWRU. D'autr
 ## Vers une application
 
 Le but final du projet est une application de surveillance. Elle reprendrait la chaîne retenue : calcul des indicateurs ou fenêtrage du signal, détection, diagnostic indicatif et décision par roulement, avec une interface qui affiche l'évolution du score d'anomalie comme une carte de contrôle.
+
+# Annexes
+
+## Repo github du projet
+
+https://github.com/Robin3992/BDS_Fault_Detection
+
+## Références
+
+https://github.com/thfmn/xjtu-sy-bearing  
+https://github.com/AmirHossein-STP/vibration_anomaly  
+https://github.com/sricharan-pusarla/bearing_sensor_anamoly_detection  
+https://www.sciencedirect.com/science/article/abs/pii/S0888327010002530?via%3Dihub#cited-by  
