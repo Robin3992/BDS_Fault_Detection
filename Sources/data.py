@@ -146,7 +146,27 @@ def selectionner(sources=("12kDE", "Normal"), defauts=("IR", "B", "OR"),
                  diametres=(7, 14, 21), positions_or=("6",),
                  charges=(0, 1, 2, 3), canaux=("DE",)):
     """Sélection de fichiers du catalogue, critère par critère.
-    (docstring inchangée — voir ton fichier)
+    Chaque critère accepte une valeur unique ou un tuple de valeurs ;
+    None désactive le filtre (toutes les valeurs sont conservées).
+
+    Paramètres (défaut = plan factoriel 12 kHz côté moteur + sains, 40 fichiers) :
+      sources      : défaut ("12kDE", "Normal"). "Normal"/"Sain" = les 4 fichiers
+                     sains (remplace l'ancien avec_sains). Autres : "12kFE", "48kDE"
+      defauts      : ex. ("IR", "B", "OR") ; None = tous les défauts
+      diametres    : ex. (7, 14, 21) en millièmes de pouce ; None = tous
+      positions_or : ex. ("6",) ; None = toutes les positions (3 h, 6 h, 12 h)
+      charges      : ex. (0, 1, 2, 3) en HP ; None = toutes les charges
+      canaux       : str / tuple identique pour toutes les sources ("DE", ("DE","FE"), "BA")
+                     OU dict {source: canaux} avec "*" = valeur par défaut :
+                     canaux={"12kDE": ("DE",), "12kFE": ("FE",), "*": ("DE", "FE")}
+
+    Renvoie le catalogue filtré (même format qu'avant) + colonne "canaux" (tuple),
+    remplie LIGNE PAR LIGNE quand canaux est un dict.
+
+    Exemples :
+      selectionner2()                                          # plan du rapport (40 fichiers, DE)
+      selectionner2(sources=("12kDE", "12kFE", "Normal"),
+                    canaux={"12kDE": "DE", "12kFE": "FE", "Normal": "DE"})
     """
     # Chaque critère accepte une valeur unique OU un tuple -> normalisé en liste
     # (None = filtre désactivé : toutes les valeurs sont conservées)

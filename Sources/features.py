@@ -68,7 +68,9 @@ def construire_table(selection, charger, canaux=None):
 
 def construire_table_SpecMourad(selection, charger, canaux=None):
     """Construit la table des indicateurs : une ligne par (fichier, fenêtre, canal).
-    (docstring inchangée — voir ton fichier)
+    canaux : None = lu depuis la colonne "canaux" de `selection`, LIGNE PAR LIGNE
+             (remplie par data.selectionner2, éventuellement via un dict
+             {source: canaux}) ; sinon tuple/str de canaux identiques pour tous.
     """
     # Accumulateur : une dict par ligne de la table (fichier, fenêtre, canal)
     lignes = []
@@ -163,7 +165,8 @@ def preparer_modeling_DE_FE(table, features, canal_train="DE", canal_test="FE", 
     """Split TRANSVERSE par canal :
     -> train sur `canal_train` (DE)
     -> test sur `canal_test` (FE)
-    (docstring inchangée — voir ton fichier)
+    target : colonne utilisée comme étiquette de classe
+             ("classe" = 10 classes IR007/..., "defaut" = 4 classes Sain/IR/B/OR)
     """
     # Vérif : la table vient de construire_table(_SpecMourad), qui crée la colonne "canal"
     assert "canal" in table.columns, "La table doit contenir une colonne 'canal'"
@@ -198,8 +201,13 @@ def preparer_modeling_DE_FE(table, features, canal_train="DE", canal_test="FE", 
 
 
 def equilibrer(X_train, y_train, X_test, y_test, type="train", n=None, seed=42):
-    """Équilibre les classes par sous-échantillonnage (tirage aléatoire reproductible).
-    (docstring inchangée — voir ton fichier)
+    """
+    Équilibre les classes par sous-échantillonnage (tirage aléatoire reproductible).
+
+    type='min'       : train et test équilibrés chacun sur leur propre classe minoritaire
+    type='train'     : seul le train est équilibré (sur sa classe minoritaire, ou n) — test intact
+    type='train2test': comme 'train', et le test est plafonné au même n
+    n                : plafond de fenêtres par classe (None = min de la classe concernée)
     """
     # Fonction interne : sous-échantillonne chaque classe à n fenêtres (tirage reproductible via seed)
     def sous_echantillonner(X, y, n):
