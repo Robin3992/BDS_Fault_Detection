@@ -14,16 +14,23 @@ Exécution :  python code.py
 (Le premier run télécharge les données CWRU dans data/cwru_cache/.)
 """
 
-import sys
-from pathlib import Path
+# ---------------------------------------------------------------------
+# Imports standards
+# ---------------------------------------------------------------------
+import sys                      # pour modifier sys.path (accès au dossier Sources/)
+from pathlib import Path        # chemins de fichiers indépendants de l'OS
 
-import pandas as pd
-import numpy as np
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import RandomizedSearchCV, StratifiedGroupKFold, StratifiedKFold
-import joblib
+# Imports data / ML
+import pandas as pd             # tables de données (X, y)
+import numpy as np               # calculs numériques (FPR/FNR)
+from sklearn.ensemble import RandomForestClassifier                 # le modèle retenu
+from sklearn.model_selection import RandomizedSearchCV, StratifiedGroupKFold, StratifiedKFold  # optimisation + CV
+import joblib                   # sauvegarde / chargement du modèle (.joblib)
 
 # --- Racine du dépôt (pour importer Sources/) ---
+# On remonte l'arborescence depuis l'emplacement de CE fichier jusqu'au dossier
+# contenant "BDS_Fault_Detection" : comme ça, le script marche qu'il soit
+# placé à la racine du dépôt ou dans Codes/.
 def trouver_racine(dossier=Path(__file__).resolve()):
     for parent in (dossier, *dossier.parents):
         if "BDS_Fault_Detection" in parent.name:
@@ -31,11 +38,14 @@ def trouver_racine(dossier=Path(__file__).resolve()):
     raise FileNotFoundError("Dossier 'BDS_Fault_Detection' introuvable.")
 
 RACINE = trouver_racine()
-sys.path.insert(0, str(RACINE))
+sys.path.insert(0, str(RACINE))   # rend le dossier racine importable (Sources/...)
 
+# Modules du projet (dossier Sources/ à la racine du dépôt)
 from Sources import data, features, indicateurs, models
 
-# Features utilisées : 4 temporels + spectres (amplitudes raies caractéristiques : fondamentale + 2 harmoniques)
+# Features utilisées : 4 temporels + spectres (amplitudes des raies caractéristiques)
+# -> ce sont les colonnes de la table d'indicateurs fournies au modèle.
+#    Ne pas modifier sans réentraîner le modèle (le .joblib est lié à cet ordre de features).
 FEATURES = indicateurs.COLONNES_TEMPORELS + indicateurs.COLONNES_Mourad
 CIBLE    = "defaut"     # "defaut" = 4 classes (Sain/IR/B/OR) ; "classe" = 10 classes
 
@@ -48,6 +58,8 @@ def preparer_donnees():
     train = capteur DE, test = capteur FE (split transverse, standardisé sur le train).
     Renvoie X_train, X_test, y_train, y_test, g_train (fichiers du train, pour la CV groupée).
     """
+    # Sélection du plan de données CWRU : défauts IR/B/OR, diamètres 7/14/21,
+    # position OR@6, charges 0-3 HP, sur les deux capteurs DE et FE.
     selection = data.selectionner(
         sources=("12kDE", "12kFE", "Normal"),
         defauts=("IR", "B", "OR"),
@@ -57,11 +69,13 @@ def preparer_donnees():
         canaux={"12kDE": ("DE",), "12kFE": ("FE",), "Normal": ("DE", "FE")},
     )
 
-    # Chargement des données + ajout des indicateurs par fenêtre   
-    table = features.construire_table_SpecMourad(selection, data.charger)   
+    # Chargement des données + ajout des indicateurs par fenêtre (RMS_bande et Env_BPFI/BPFO/BSF/FTF)
+    table = features.construire_table_SpecMourad(selection, data.charger)
     print(f"Table construite : {len(table)} fenêtres, {table['fichier'].nunique()} fichiers")
 
     # Split transverse DE -> FE + standardisation (fit sur le train uniquement)
+    # -> le test (FE) est un capteur jamais vu à l'entraînement ; la standardisation
+    #    n'utilise que les statistiques du train : pas de fuite.
     X_train, X_test, y_train, y_test, g_train, _ = features.preparer_modeling_DE_FE(
         table, FEATURES, canal_train="DE", canal_test="FE", target=CIBLE)
 
@@ -79,13 +93,14 @@ def preparer_donnees():
 # =====================================================================
 
 # Grille élargie pour l'optimisation (1080 combinaisons possibles)
+# Chaque clé = un hyperparamètre du RandomForestClassifier, chaque valeur = les essais.
 GRILLE_RF = {
-    "n_estimators":      [200, 400, 800],
-    "max_depth":         [None, 8, 16, 32],
-    "min_samples_leaf":  [1, 2, 5, 10, 20],
-    "min_samples_split": [2, 5, 10],
-    "max_features":      ["sqrt", "log2", None],
-    "class_weight":      [None, "balanced"],
+    "n_estimators":      [200, 400, 800],     # nombre d'arbres de la forêt
+    "max_depth":         [None, 8, 16, 32],    # profondeur max (None = illimitée)
+    "min_samples_leaf":  [1, 2, 5, 10, 20],    # taille minimale d'une feuille
+    "min_samples_split": [2, 5, 10],           # échantillons min pour couper un nœud
+    "max_features":      ["sqrt", "log2", None],  # features testées à chaque split
+    "class_weight":      [None, "balanced"],   # pondération des classes (déséquilibre Sain vs défauts)
 }
 
 
@@ -98,15 +113,19 @@ def optimiser_rf(X_train, y_train, groupes=None, grille=None, cv=3, n_iter=30, s
     Renvoie le meilleur modèle entraîné.
     """
     if grille is None:
-        grille = GRILLE_RF
-    rf = RandomForestClassifier(random_state=42, n_jobs=-1)
+        grille = GRILLE_RF                    # grille élargie ci-dessus si aucune fournie
+    rf = RandomForestClassifier(random_state=42, n_jobs=-1)   # modèle de base (sera cloné par la recherche)
 
+    # CV groupée par fichier si on a les groupes -> les fenêtres d'un même fichier
+    # ne sont jamais des deux côtés d'un pli (pas de fuite dans le réglage).
     if groupes is not None:
         cv_split = StratifiedGroupKFold(n_splits=cv, shuffle=True, random_state=42)
     else:
         cv_split = StratifiedKFold(n_splits=cv, shuffle=True, random_state=42)
-        groupes = None
+        groupes = None                        # GridSearchCV sans groupes
 
+    # Recherche aléatoire : n_iter combinaisons tirées dans la grille, évaluées en CV,
+    # puis refit du meilleur modèle sur tout le train.
     recherche = RandomizedSearchCV(rf, grille, n_iter=n_iter, scoring=scoring,
                                    cv=cv_split, n_jobs=-1, refit=True,
                                    random_state=42, verbose=1)
@@ -115,7 +134,7 @@ def optimiser_rf(X_train, y_train, groupes=None, grille=None, cv=3, n_iter=30, s
     print(f"\n{n_iter} combinaisons testées sur {cv} plis ({scoring})")
     print("Meilleurs hyperparamètres :", recherche.best_params_)
     print(f"Meilleur score ({scoring}) en validation croisée : {recherche.best_score_:.3f}")
-    return recherche.best_estimator_
+    return recherche.best_estimator_          # modèle entraîné avec les meilleurs hyperparamètres
 
 
 # =====================================================================
@@ -139,13 +158,17 @@ def evaluer(rf, X_test, y_test, titre="Random Forest (train DE -> test FE)"):
     Renvoie la matrice de confusion.
     """
     y_pred = predire(rf, X_test)
+    # evaluer_modele affiche accuracy / balanced accuracy / F1-macro / classification_report
+    # et trace la matrice de confusion ; on lui passe les classes du modèle pour l'ordre.
     cm = models.evaluer_modele(y_test, y_pred, classes=list(rf.classes_), titre=titre)
 
     # Taux spécifiques au projet (classe "Sain" = référence)
     y_true = np.asarray(y_test); y_p = np.asarray(y_pred)
-    sains = y_true == "Sain"
-    defauts = ~sains
+    sains = y_true == "Sain"        # masque des vraies fenêtres saines
+    defauts = ~sains                # masque des vrais défauts
+    # FPR = part des sains prédits défectueux (fausses alertes)
     fpr = (y_p[sains] != "Sain").mean() if sains.any() else float("nan")
+    # FNR = part des défauts prédits sains (défauts manqués)
     fnr = (y_p[defauts] == "Sain").mean() if defauts.any() else float("nan")
     print(f"Fausses alertes (FPR)   : {fpr:.2%}")
     print(f"Défauts manqués (FNR)   : {fnr:.2%}")
@@ -161,9 +184,12 @@ if __name__ == "__main__":
     X_train, X_test, y_train, y_test, g_train = preparer_donnees()
 
     # 2. Entrainement avec optimisation des hyperparamètres via RandomizedSearchCV
+    #    (CV groupée par fichier grâce à g_train : pas de fuite entre plis)
     rf = optimiser_rf(X_train, y_train, groupes=g_train)
 
     # Sauvegarde optionnelle du modèle :
+    # -> le .joblib contient le modèle entraîné AVEC les hyperparamètres optimisés
+    #    (vérifiable après chargement avec rf.get_params())
     joblib.dump(rf, RACINE / "Sources" / "Fitted_models" / "modele_RF.joblib")
 
     # Chargement du modèle optimisé et entrainé

@@ -58,7 +58,8 @@ def indicateurs_spectraux(x, fs, rpm, roulement="DE",
     res["f_pic"] = float(freqs[dans_bande][np.argmax(amp[dans_bande])])
     return res
 
-
+# 4 features temporelles (RMS, Pic, facteur de crête, Kurtosis)
+# -> 1ère partie de FEATURES dans RandomForest.py
 COLONNES_TEMPORELS = ["RMS", "Pic", "Crete", "Kurtosis"]
 COLONNES_SPECTRAUX = ([f"amp_{F}_{k}" for F in RAIES for k in HARMONIQUES]
                       + [f"ratio_{F}" for F in RAIES] 
@@ -119,7 +120,8 @@ def indicateurs_spectraux_Mourad(x_filt, env, fs, rpm, roulement="DE",
         res[f"Env_{nom}"] = total / fond
     return res
 
-
+# 5 features "Mourad" : RMS_bande + Env_BPFI/BPFO/BSF/FTF
+# -> 2ème partie de FEATURES ; produites uniquement par features.construire_table_SpecMourad
 COLONNES_Mourad = ["RMS_bande"] + [f"Env_{F}" for F in COEFF_FREQ["DE"]]
 # -> ['RMS_bande', 'Env_BPFI', 'Env_BPFO', 'Env_BSF', 'Env_FTF']
 

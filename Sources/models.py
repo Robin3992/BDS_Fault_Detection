@@ -16,20 +16,28 @@ from sklearn.metrics import (accuracy_score, balanced_accuracy_score,
 def evaluer_modele(y_test, y_pred, classes=None, titre="", report= True, dispMatrice=True):
     """Affiche accuracy, balanced accuracy, F1-macro, le rapport par classe
     et trace la matrice de confusion. Renvoie la matrice cm."""
+    # Si classes non fourni : union des classes vues en test et prédites, triées
     if classes is None:
         classes = sorted(set(y_test) | set(y_pred))
+    # En-tête de la section de résultats
     print(f"=== {titre} ===")
+    # Métriques globales : accuracy, balanced accuracy, F1-macro
     print(f"Accuracy          : {accuracy_score(y_test, y_pred):.3f}")
     print(f"Balanced accuracy : {balanced_accuracy_score(y_test, y_pred):.3f}")
     print(f"F1-macro          : {f1_score(y_test, y_pred, average='macro'):.3f}")
 
+    # Rapport détaillé par classe (précision / rappel / F1, zero_division=0 si classe absente)
     if report:
         print("\nRapport par classe :")
         print(classification_report(y_test, y_pred, labels=classes, zero_division=0))
-        
+
+    # cm reste None si dispMatrice=False
     cm = None
+    # Calcul + tracé de la matrice de confusion
     if dispMatrice:
+        # Matrice calculée dans l'ordre des classes demandé (passé par RandomForest.py via rf.classes_)
         cm = confusion_matrix(y_test, y_pred, labels=classes)
+        # Affichage en heatmap (colormap Blues)
         fig, ax = plt.subplots(figsize=(8, 7))
         im = ax.imshow(cm, cmap="Blues")
         ax.set_xticks(range(len(classes)), classes, rotation=45, ha="right")
@@ -37,6 +45,7 @@ def evaluer_modele(y_test, y_pred, classes=None, titre="", report= True, dispMat
         ax.set_xlabel("Classe prédite")
         ax.set_ylabel("Classe réelle")
         ax.set_title(f"Matrice de confusion — {titre}", loc="left")
+        # Annotation de chaque case avec sa valeur (texte blanc si > moitié du max)
         for i in range(len(classes)):
             for j in range(len(classes)):
                 v = cm[i, j]
@@ -46,6 +55,7 @@ def evaluer_modele(y_test, y_pred, classes=None, titre="", report= True, dispMat
         plt.tight_layout()
         plt.show()
 
+    # Renvoie la matrice de confusion (récupérée par evaluer() dans RandomForest.py)
     return cm
 
 
